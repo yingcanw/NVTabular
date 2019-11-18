@@ -1,3 +1,8 @@
+
+[![pipeline status](https://gitlab-master.nvidia.com/rapidsdl/dl-pipe/badges/master/pipeline.svg)](https://gitlab-master.nvidia.com/rapidsdl/dl-pipe/commits/master) 
+[![coverage report](https://gitlab-master.nvidia.com/rapidsdl/dl-pipe/badges/master/coverage.svg)](https://gitlab-master.nvidia.com/rapidsdl/dl-pipe/commits/master)
+
+
 # RAPIDS Standard Repo Template
 
 This is repo is the standard RAPIDS repo with the following items to make all RAPIDS repos consistent:
