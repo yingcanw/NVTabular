@@ -1,0 +1,8 @@
+*.pyc
+.ipynb_checkpoints/*
+cache/*
+data*/*
+*.parquet
+*.orc
+*.csv
+dist/*

@@ -1,0 +1,299 @@
+import warnings
+
+warnings.filterwarnings("ignore")
+import cudf
+
+import sys
+import numba
+
+
+#
+# Helper Function definitions
+#
+
+
+def _allowable_batch_size(gpu_memory_frac, row_size):
+    free_mem, _ = numba.cuda.current_context().get_memory_info()
+    gpu_memory = free_mem * gpu_memory_frac
+    return max(int(gpu_memory / row_size), 1)
+
+
+def _get_read_engine(engine, file_path, **kwargs):
+    if engine is None:
+        engine = file_path.split(".")[-1]
+    if not isinstance(engine, str):
+        raise TypeError("Expecting engine as string type.")
+
+    if engine == "csv":
+        return CSVFileReader(file_path, **kwargs)
+    elif engine == "parquet":
+        return PQFileReader(file_path, **kwargs)
+    else:
+        raise ValueError("Unrecognized read engine.")
+
+
+#
+# GPUFileReader Base Class
+#
+
+
+class GPUFileReader:
+    def __init__(self, file_path, gpu_memory_frac, batch_size, **kwargs):
+        """ GPUFileReader Constructor
+        """
+        self.file = None
+        self.file_path = file_path
+        self.intialize_reader(gpu_memory_frac, batch_size, **kwargs)
+
+    def intialize_reader(self, **kwargs):
+        """ Define necessary file statistics and properties for reader
+        """
+        raise NotImplementedError()
+
+    def read_file_batch(self, nskip=0, columns=None, **kwargs):
+        """ Read a chunk of a tabular-data file
+
+        Parameters
+        ----------
+        nskip: int
+            Row offset
+        columns: List[str]
+            List of column names to read
+        **kwargs:
+            Other format-specific key-word arguments
+
+        Returns
+        -------
+        A CuDF DataFrame
+        """
+        raise NotImplementedError()
+
+    def __del__(self):
+        """ GPUFileReader Destructor
+        """
+        if self.file:
+            self.file.close()
+
+
+#
+# GPUFileReader Sub Classes (Parquet and CSV Engines)
+#
+
+
+class PQFileReader(GPUFileReader):
+    def intialize_reader(self, gpu_memory_frac, batch_size, **kwargs):
+        self.reader = cudf.read_parquet
+        self.file = open(self.file_path, "rb")
+
+        # Read Parquet-file metadata
+        (
+            self.num_rows,
+            self.num_row_groups,
+            self.columns,
+        ) = cudf.io.read_parquet_metadata(self.file)
+        self.file.seek(0)
+
+        # Use first row to estimate memory-reqs
+        self.row_size = 0
+        if self.num_rows > 0:
+            for col in self.reader(self.file, nrows=1)._columns:
+                self.row_size += sys.getsizeof(col.dtype)
+            self.file.seek(0)
+        else:
+            self.row_size = 0
+
+        # Check if wwe are using row groups
+        self.use_row_groups = kwargs.get("use_row_groups", None)
+        self.row_group_batch = 1
+        self.next_row_group = 0
+
+        # Determine batch size if needed
+        if batch_size and not self.use_row_groups:
+            self.batch_size = batch_size
+            self.use_row_groups = False
+        else:
+            # Use row size to calculate "allowable" batch size
+            gpu_memory_batch = _allowable_batch_size(gpu_memory_frac, self.row_size)
+            self.batch_size = min(gpu_memory_batch, self.num_rows)
+
+            # Use row-groups if they meet memory constraints
+            rg_size = int(self.num_rows / self.num_row_groups)
+            if (self.use_row_groups is None) and (rg_size <= gpu_memory_batch):
+                self.use_row_groups = True
+            elif self.use_row_groups is None:
+                self.use_row_groups = False
+
+            # Determine row-groups per batch
+            if self.use_row_groups:
+                self.row_group_batch = max(int(gpu_memory_batch / rg_size), 1)
+
+    def read_file_batch(self, nskip=0, columns=None, **kwargs):
+        if self.use_row_groups:
+            row_group_batch = min(
+                self.row_group_batch, self.num_row_groups - self.next_row_group
+            )
+            chunk = cudf.DataFrame()
+            for i in range(row_group_batch):
+                add_chunk = self.reader(
+                    self.file_path,
+                    row_group=self.next_row_group,
+                    engine="cudf",
+                    columns=columns,
+                )
+                self.next_row_group += 1
+                chunk = cudf.concat([chunk, add_chunk], axis=0) if chunk else add_chunk
+                del add_chunk
+            return chunk
+        else:
+            batch = min(self.batch_size, self.num_rows - nskip)
+            return self.reader(
+                self.file_path,
+                num_rows=batch,
+                skip_rows=nskip,
+                engine="cudf",
+                columns=columns,
+            )
+
+
+class CSVFileReader(GPUFileReader):
+    def intialize_reader(self, gpu_memory_frac, batch_size, **kwargs):
+        self.reader = cudf.read_csv
+        self.file = open(self.file_path, "r")
+
+        # Count rows and determine column names
+        self.columns = []
+        self.row_size = 0
+        for i, l in enumerate(self.file):
+            pass
+        self.file.seek(0)
+        self.num_rows = i
+
+        # Use first row to estimate memory-reqs
+        names = kwargs.get("names", None)
+        self.names = []
+        dtype_inf = {}
+        if self.num_rows > 0:
+            for i, col in enumerate(
+                self.reader(self.file, nrows=5, names=names, header=False)._columns
+            ):
+                if names:
+                    name = names[i]
+                else:
+                    name = col.name
+                self.names.append(name)
+                self.row_size += sys.getsizeof(col.dtype)
+                dtype_inf[name] = col.dtype
+        else:
+            self.row_size = 0
+        self.dtype = kwargs.get("dtype", None) or dtype_inf
+
+        # Determine batch size if needed
+        if batch_size:
+            self.batch_size = batch_size
+        else:
+            gpu_memory_batch = _allowable_batch_size(gpu_memory_frac, self.row_size)
+            self.batch_size = min(gpu_memory_batch, self.num_rows)
+
+    def read_file_batch(self, nskip=0, columns=None, **kwargs):
+        batch = min(self.batch_size, self.num_rows - nskip)
+        chunk = self.reader(
+            self.file_path, nrows=batch, skiprows=nskip, names=self.names, header=False
+        )
+        if columns:
+            for col in columns:
+                chunk[col] = chunk[col].astype(self.dtype[col])
+            return chunk[columns]
+        return chunk
+
+
+#
+# GPUFileIterator (Single File Iterator)
+#
+
+
+class GPUFileIterator:
+    def __init__(
+        self,
+        file_path,
+        engine=None,
+        gpu_memory_frac=0.5,
+        batch_size=None,
+        columns=None,
+        use_row_groups=None,
+        dtype=None,
+        names=None,
+    ):
+        self.file_path = file_path
+        self.engine = _get_read_engine(
+            engine,
+            file_path,
+            batch_size=batch_size,
+            gpu_memory_frac=gpu_memory_frac,
+            use_row_groups=use_row_groups,
+            dtype=dtype,
+            names=names,
+        )
+        self.columns = columns
+        self.file_size = self.engine.num_rows
+        self.rows_processed = 0
+
+    def __iter__(self):
+        self.rows_processed = 0
+        return self
+
+    def __len__(self):
+        add_on = 0 if self.file_size % self.engine.batch_size == 0 else 1
+        return self.file_size // self.engine.batch_size + add_on
+
+    def __next__(self):
+
+        if self.rows_processed >= self.file_size:
+            raise StopIteration
+
+        chunk = self.engine.read_file_batch(
+            nskip=self.rows_processed, columns=self.columns
+        )
+
+        self.rows_processed += len(chunk)
+        return chunk
+
+
+#
+# GPUDatasetIterator (Iterates through multiple files)
+#
+
+
+class GPUDatasetIterator:
+    def __init__(self, paths, **kwargs):
+        if isinstance(paths, str):
+            paths = [paths]
+        if not isinstance(paths, list):
+            raise TypeError("paths must be a string or a list.")
+        if len(paths) < 1:
+            raise ValueError("len(paths) must be > 0.")
+        self.paths = paths
+        self.num_paths = len(paths)
+        self.kwargs = kwargs
+        self.itr = None
+        self.next_path_ind = 0
+
+    def __iter__(self):
+        self.itr = None
+        self.next_path_ind = 0
+        return self
+
+    def __next__(self):
+
+        if self.itr is None:
+            self.itr = GPUFileIterator(self.paths[self.next_path_ind], **self.kwargs)
+            self.next_path_ind += 1
+
+        while True:
+            try:
+                return self.itr.__next__()
+            except StopIteration:
+                if self.next_path_ind >= self.num_paths:
+                    raise StopIteration
+                path = self.paths[self.next_path_ind]
+                self.next_path_ind += 1
+                self.itr = GPUFileIterator(path, **self.kwargs)
