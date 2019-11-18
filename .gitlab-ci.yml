@@ -1,0 +1,3 @@
+include: 
+  - local: '/ds-itr/.gitlab-ci.yml'
+
