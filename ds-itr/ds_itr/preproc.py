@@ -154,8 +154,6 @@ class Categorify(TabularProc):
         return n_cat, sz
 
 
-    
-
 class Preprocessor:
     def __init__(
         self, cat_names=None, cont_names=None, label_name=None, ops=None, to_cpu=True
@@ -415,6 +413,7 @@ class Preprocessor:
         from torch.utils.dlpack import from_dlpack
 
         def _to_tensor(gdf: cudf.DataFrame, dtype, tensor_list, non_target=True):
+            print(gdf.shape)
             if gdf.empty:
                 return
             for column in gdf.columns:
@@ -423,7 +422,7 @@ class Preprocessor:
                 t = from_dlpack(g).type(dtype)
                 if non_target:
                     t = t.unsqueeze(1) if gdf.shape[1] == 1 else t
-                #                 t = t.to(torch.device("cpu")) if self.to_cpu else t
+                t = t.to(torch.device("cpu")) if self.to_cpu else t
                 tensor_list[column] = (
                     t
                     if column not in tensor_list
@@ -463,4 +462,4 @@ class Preprocessor:
         cats = torch.stack(cats_list, dim=1) if cats_list else None
         conts = torch.stack(conts_list, dim=1) if conts_list else None
         label = torch.cat(label_list, dim=0) if label_list else None
-        return (cats, conts), label
+        return cats, conts, label

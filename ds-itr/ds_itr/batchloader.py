@@ -19,6 +19,69 @@ class FileItrDataset(torch.utils.data.IterableDataset):
         return len(self.gpu_itr)
 
 
+class TensorItrDataset(torch.utils.data.IterableDataset):
+    tensor_itr = None
+
+    def __init__(self, tensors, **kwargs):
+        self.tensor_itr = TensorItr(tensors, **kwargs)
+
+    def __iter__(self):
+        return self.tensor_itr.__iter__()
+
+    def __len__(self):
+        return len(self.tensor_itr)
+
+
+class TensorItr:
+    """Batch Dataset wrapping Tensors.  
+    Arguments:
+        *tensors (Tensor): tensors that have the same size of the first dimension.
+        batch_size: The size of the batch to return
+        
+        
+    """
+
+    def __init__(self, tensors, batch_size=1, pin_memory=False, shuffle=False):
+        assert all(tensors[0].size(0) == tensor.size(0) for tensor in tensors)
+        self.tensors = tensors
+        self.batch_size = batch_size
+        self.cur_idx = 0
+        self.num_samples = tensors[0].size(0)
+        if shuffle:
+            self.shuffle()
+
+        if pin_memory:
+            for tensor in self.tensors:
+                tensor.pin_memory()
+
+    def __iter__(self):
+        self.cur_idx = 0
+        return self
+
+    def __len__(self):
+        if self.num_samples % self.batch_size == 0:
+            return self.num_samples // self.batch_size
+        else:
+            return self.num_samples // self.batch_size + 1
+
+    def __next__(self):
+        idx = self.cur_idx * self.batch_size
+        self.cur_idx += 1
+        # Need to handle odd sized batches if data isn't divisible by batchsize
+        if idx < self.num_samples and (idx + self.batch_size <= self.num_samples):
+            tens = [tensor[idx : idx + self.batch_size] for tensor in self.tensors]
+            return (tens[0], tens[1]), tens[2]
+        elif idx < self.num_samples and idx + self.batch_size > self.num_samples:
+            tens = [tensor[idx:] for tensor in self.tensors]
+            return (tens[0], tens[1]), tens[2]
+        else:
+            raise StopIteration
+
+    def shuffle(self):
+        idx = torch.randperm(self.num_samples, dtype=torch.int64)
+        self.tensors = [tensor[idx] for tensor in self.tensors]
+
+
 def create_tensors(gdf, preproc=None, cat_names=None, cont_names=None, label_name=None):
     # insert preprocessor
     # transform cats here
@@ -40,9 +103,21 @@ def create_tensors(gdf, preproc=None, cat_names=None, cont_names=None, label_nam
     conts_list = [conts[x] for x in sorted(conts.keys())] if conts else None
     label_list = [label[x] for x in sorted(label.keys())] if label else None
     del cats, conts, label
-    cats = torch.stack(cats_list, dim=1) if cats_list else None
-    conts = torch.stack(conts_list, dim=1) if conts_list else None
-    label = torch.cat(label_list, dim=0) if label_list else None
+    cats = (
+        torch.stack(cats_list, dim=1)
+        if len(cats_list) > 1
+        else torch.cat(cats_list, dim=0)
+    )
+    conts = (
+        torch.stack(conts_list, dim=1)
+        if len(conts_list) > 1
+        else torch.cat(conts_list, dim=0)
+    )
+    label = (
+        torch.cat(label_list, dim=0)
+        if len(label_list) > 1
+        else torch.cat(label_list, dim=0)
+    )
     return cats, conts, label
 
 

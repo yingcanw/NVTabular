@@ -16,6 +16,12 @@ def _enforce_str(y: cudf.Series) -> cudf.Series:
     return y
 
 
+def _enforce_npint32(y: cudf.Series) -> cudf.Series:
+    if y.dtype != np.int32:
+        return y.astype(np.int32)
+    return y
+
+
 class DLLabelEncoder(object):
     def __init__(self, *args, **kwargs):
         self._cats: nvcategory.nvcategory = None
