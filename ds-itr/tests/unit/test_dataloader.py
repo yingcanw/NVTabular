@@ -6,115 +6,7 @@ from cudf.tests.utils import assert_eq
 import ds_itr.batchloader as bl
 import pytest
 import torch
-
-import glob
-import time
-import math
-import random
-import os
-
-
-allcols_csv = ["timestamp", "id", "label", "name-string", "x", "y", "z"]
-mycols_csv = ["name-string", "id", "label", "x", "y"]
-mycols_pq = ["name-cat", "name-string", "id", "label", "x", "y"]
-mynames = [
-    "Alice",
-    "Bob",
-    "Charlie",
-    "Dan",
-    "Edith",
-    "Frank",
-    "George",
-    "Hannah",
-    "Ingrid",
-    "Jerry",
-    "Kevin",
-    "Laura",
-    "Michael",
-    "Norbert",
-    "Oliver",
-    "Patricia",
-    "Quinn",
-    "Ray",
-    "Sarah",
-    "Tim",
-    "Ursula",
-    "Victor",
-    "Wendy",
-    "Xavier",
-    "Yvonne",
-    "Zelda",
-]
-
-sample_stats = {
-    "batch_medians": {
-        "id": [999.0, 1000.0],
-        "x": [-0.051, -0.001],
-        "y": [-0.009, -0.001],
-    },
-    "medians": {"id": 1000.0, "x": -0.001, "y": -0.001},
-    "means": {"id": 1000.0, "x": -0.008, "y": -0.001},
-    "vars": {"id": 993.65, "x": 0.338, "y": 0.335},
-    "stds": {"id": 31.52, "x": 0.581, "y": 0.578},
-    "counts": {"id": 4321.0, "x": 4321.0, "y": 4321.0},
-    "host_categories": {"name-cat": mynames, "name-string": mynames},
-}
-
-
-@pytest.fixture(scope="session")
-def datasets(tmpdir_factory):
-    df = cudf.datasets.timeseries(
-        start="2000-01-01",
-        end="2000-01-04",
-        freq="60s",
-        dtypes={
-            "name-cat": "category",
-            "name-string": "category",
-            "id": int,
-            "label": int,
-            "x": float,
-            "y": float,
-            "z": float,
-        },
-    ).reset_index()
-    df["name-string"] = df["name-string"].astype("O")
-
-    # Add two random null values to each column
-    imax = len(df) - 1
-    for col in df.columns:
-        if col in ["name-cat", "label"]:
-            break
-        df[col].iloc[random.randint(0, imax)] = None
-        df[col].iloc[random.randint(0, imax)] = None
-
-    datadir = tmpdir_factory.mktemp("data")
-    datadir = {
-        "parquet": tmpdir_factory.mktemp("parquet"),
-        "csv": tmpdir_factory.mktemp("csv"),
-        "csv-no-header": tmpdir_factory.mktemp("csv-no-header"),
-    }
-
-    half = int(len(df) // 2)
-
-    # Write Parquet Dataset
-    df.iloc[:half].to_parquet(str(datadir["parquet"]), chunk_size=1000)
-    df.iloc[half:].to_parquet(str(datadir["parquet"]), chunk_size=1000)
-
-    # Write CSV Dataset (Leave out categorical column)
-    df.iloc[:half].drop(columns=["name-cat"]).to_csv(
-        str(datadir["csv"].join("dataset-0.csv")), index=False
-    )
-    df.iloc[half:].drop(columns=["name-cat"]).to_csv(
-        str(datadir["csv"].join("dataset-1.csv")), index=False
-    )
-    df.iloc[:half].drop(columns=["name-cat"]).to_csv(
-        str(datadir["csv-no-header"].join("dataset-0.csv")), header=False, index=False
-    )
-    df.iloc[half:].drop(columns=["name-cat"]).to_csv(
-        str(datadir["csv-no-header"].join("dataset-1.csv")), header=False, index=False
-    )
-
-    return datadir
+from tests.fixtures import *
 
 
 @pytest.mark.parametrize("batch", [0, 100, 1000])
@@ -273,9 +165,17 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         names=allcols_csv,
     )
 
-    x, y = processor.ds_to_tensors(data_itr)
+    x = processor.ds_to_tensors(data_itr)
 
     num_rows, num_row_groups, col_names = cudf.io.read_parquet_metadata(
         str(tmpdir) + "/_metadata"
     )
     assert len(x[0]) == len_df_pp
+
+    itr_ds = bl.TensorItrDataset([x[0], x[1], x[2]], batch_size=512000)
+    count_tens_itr = 0
+    for data_gd in itr_ds:
+        print(data_gd)
+        count_tens_itr += len(data_gd[1])
+
+    assert len_df_pp == count_tens_itr
