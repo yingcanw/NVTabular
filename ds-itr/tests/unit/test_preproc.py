@@ -1,6 +1,7 @@
 import ds_itr.ds_iterator as ds
 import ds_itr.dl_encoder as encoder
 import ds_itr.preproc as pp
+import ds_itr.ops as ops
 import cudf
 from cudf.tests.utils import assert_eq
 import pytest
@@ -234,8 +235,8 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,
-        stat_ops=[pp.Moments(), pp.Median(), pp.Encoder()],
-        df_ops=[pp.FillMissing(), pp.Normalize(), pp.Categorify()],
+        stat_ops=[ops.Moments(), ops.Median(), ops.Encoder()],
+        df_ops=[ops.FillMissing(), ops.Normalize(), ops.Categorify()],
         to_cpu=False,
     )
 
@@ -318,8 +319,8 @@ def test_pq_to_pq_processed(tmpdir, datasets):
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,
-        stat_ops=[pp.Moments(), pp.Median(), pp.Encoder()],
-        df_ops=[pp.FillMissing(), pp.Normalize(), pp.Categorify()],
+        stat_ops=[ops.Moments(), ops.Median(), ops.Encoder()],
+        df_ops=[ops.FillMissing(), ops.Normalize(), ops.Categorify()],
         to_cpu=True,
     )
 
