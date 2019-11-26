@@ -184,7 +184,6 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     itr_ds = bl.TensorItrDataset([x[0], x[1], x[2]], batch_size=512000)
     count_tens_itr = 0
     for data_gd in itr_ds:
-        print(data_gd)
         count_tens_itr += len(data_gd[1])
         assert data_gd[0][0].shape[1] > 0
         assert data_gd[0][1].shape[1] > 0

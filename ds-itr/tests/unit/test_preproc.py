@@ -3,6 +3,7 @@ import ds_itr.dl_encoder as encoder
 import ds_itr.preproc as pp
 import ds_itr.ops as ops
 import cudf
+import numpy as np
 from cudf.tests.utils import assert_eq
 import pytest
 
@@ -342,3 +343,45 @@ def test_pq_to_pq_processed(tmpdir, datasets):
     meta = cudf.io.read_parquet_metadata(outdir + "/_metadata")
     assert meta[2] == mycols_pq
     assert meta[0] // meta[1] <= chunk_size
+
+
+def test_estimated_row_size(tmpdir):
+    # Make sure the row_size estimate is what we expect...
+    size = 1000
+    df = cudf.DataFrame(
+        {
+            "int32": np.arange(size, dtype="int32"),
+            "int64": np.arange(size, dtype="int64"),
+            "float64": np.arange(size, dtype="float64"),
+            "str": np.random.choice(["cat", "bat", "dog"], size=size),
+        }
+    )
+
+    # Write parquet File
+    fn_csv = str(tmpdir) + "/temp.csv"
+    df.to_csv(fn_csv, index=False)
+
+    # Write csv File
+    df.to_parquet(str(tmpdir))
+    fn_pq = glob.glob(str(tmpdir) + "/*.parquet")[0]
+
+    # Use PyArrow to get "accurate" in-memory row size
+    read_byte_size = 0
+    for col in cudf.read_parquet(fn_pq)._columns:
+        if col.dtype == "object":
+            max_size = len(max(col)) // 2
+            read_byte_size += int(max_size)
+        else:
+            read_byte_size += col.dtype.itemsize
+
+    # Check parquet estimate
+    reader_pq = ds.PQFileReader(fn_pq, 0.1, None, row_size=None)
+    estimated_row_size_pq = reader_pq.estimated_row_size
+    assert estimated_row_size_pq == read_byte_size
+
+    # Check csv estimate
+    reader_csv = ds.CSVFileReader(
+        fn_csv, 0.1, None, row_size=None, dtype=["int32", "int64", "float64", "str"]
+    )
+    estimated_row_size_csv = reader_csv.estimated_row_size
+    assert estimated_row_size_csv == read_byte_size
