@@ -368,6 +368,7 @@ def test_estimated_row_size(tmpdir):
         if col.dtype == "object":
             max_size = len(max(col)) // 2
             read_byte_size += int(max_size)
+            import pdb; pdb.set_trace()
         else:
             read_byte_size += col.dtype.itemsize
 
