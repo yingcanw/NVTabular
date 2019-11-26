@@ -57,6 +57,13 @@ def test_gpu_file_iterator_dl(datasets, batch, dskey):
     for data_gd in data_itr:
         df_itr = cudf.concat([df_itr, data_gd], axis=0) if df_itr else data_gd
 
+    b_size = df_itr.shape[0] // data_itr.gpu_itr.engine.batch_size
+    b_size = (
+        b_size
+        if df_itr.shape[0] % data_itr.gpu_itr.engine.batch_size == 0
+        else b_size + 1
+    )
+    assert b_size == len(data_chain)
     assert_eq(df_itr.reset_index(drop=True), df_expect.reset_index(drop=True))
 
 
@@ -88,7 +95,8 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,
-        ops=[pp.FillMissing(), pp.Normalize(), pp.Categorify()],
+        stat_ops=[pp.Moments(), pp.Median(), pp.Encoder()],
+        df_ops=[pp.FillMissing(), pp.Normalize(), pp.Categorify()],
         to_cpu=True,
     )
 
@@ -108,28 +116,28 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         processor.load_stats(config_file)
 
     # Check mean and std
-    assert math.isclose(df.x.mean(), processor.means["x"], rel_tol=1e-4)
-    assert math.isclose(df.y.mean(), processor.means["y"], rel_tol=1e-4)
-    assert math.isclose(df.id.mean(), processor.means["id"], rel_tol=1e-4)
-    assert math.isclose(df.x.std(), processor.stds["x"], rel_tol=1e-3)
-    assert math.isclose(df.y.std(), processor.stds["y"], rel_tol=1e-3)
-    assert math.isclose(df.id.std(), processor.stds["id"], rel_tol=1e-3)
+    assert math.isclose(df.x.mean(), processor.stats["means"]["x"], rel_tol=1e-4)
+    assert math.isclose(df.y.mean(), processor.stats["means"]["y"], rel_tol=1e-4)
+    assert math.isclose(df.id.mean(), processor.stats["means"]["id"], rel_tol=1e-4)
+    assert math.isclose(df.x.std(), processor.stats["stds"]["x"], rel_tol=1e-3)
+    assert math.isclose(df.y.std(), processor.stats["stds"]["y"], rel_tol=1e-3)
+    assert math.isclose(df.id.std(), processor.stats["stds"]["id"], rel_tol=1e-3)
 
     # Check median (TODO: Improve the accuracy)
     x_median = df.x.dropna().quantile(0.5, interpolation="linear")
     y_median = df.y.dropna().quantile(0.5, interpolation="linear")
     id_median = df.id.dropna().quantile(0.5, interpolation="linear")
-    assert math.isclose(x_median, processor.medians["x"], rel_tol=1e1)
-    assert math.isclose(y_median, processor.medians["y"], rel_tol=1e1)
-    assert math.isclose(id_median, processor.medians["id"], rel_tol=1e-2)
+    assert math.isclose(x_median, processor.stats["medians"]["x"], rel_tol=1e1)
+    assert math.isclose(y_median, processor.stats["medians"]["y"], rel_tol=1e1)
+    assert math.isclose(id_median, processor.stats["medians"]["id"], rel_tol=1e-2)
 
     # Check that categories match
     if engine == "parquet":
         cats_expected0 = df["name-cat"].unique().tolist().sort()
-        cats0 = processor.encoders["name-cat"]._cats.keys().to_host().sort()
+        cats0 = processor.stats["encoders"]["name-cat"]._cats.keys().to_host().sort()
         assert cats0 == cats_expected0
     cats_expected1 = df["name-string"].unique().tolist().sort()
-    cats1 = processor.encoders["name-string"]._cats.keys().to_host().sort()
+    cats1 = processor.stats["encoders"]["name-string"]._cats.keys().to_host().sort()
     assert cats1 == cats_expected1
 
     # Write to new "shuffled" and "processed" dataset
