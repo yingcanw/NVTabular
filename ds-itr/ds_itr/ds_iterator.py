@@ -2,7 +2,6 @@ import warnings
 
 warnings.filterwarnings("ignore")
 import cudf
-import pyarrow.parquet as pq
 
 import sys
 import numba
