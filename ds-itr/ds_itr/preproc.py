@@ -206,17 +206,14 @@ class Preprocessor:
         import torch
         from torch.utils.dlpack import from_dlpack
 
-        def _to_tensor(gdf: cudf.DataFrame, dtype, tensor_list, non_target=True):
-            print(gdf.shape)
+        def _to_tensor(gdf: cudf.DataFrame, dtype, tensor_list, to_cpu=False):
             if gdf.empty:
                 return
             for column in gdf.columns:
                 gdf_col = gdf[column]
                 g = gdf_col.to_dlpack()
                 t = from_dlpack(g).type(dtype)
-                #                 if non_target:
-                #                     t = t.unsqueeze(1) if gdf.shape[1] == 1 else t
-                t = t.to(torch.device("cpu")) if self.to_cpu else t
+                t = t.to(torch.device("cpu")) if to_cpu else t
                 tensor_list[column] = (
                     t
                     if column not in tensor_list
@@ -237,11 +234,11 @@ class Preprocessor:
             del gdf
 
             if len(gdf_cats) > 0:
-                _to_tensor(gdf_cats, torch.long, cats)
+                _to_tensor(gdf_cats, torch.long, cats, to_cpu=self.to_cpu)
             if len(gdf_conts) > 0:
-                _to_tensor(gdf_conts, torch.float32, conts)
+                _to_tensor(gdf_conts, torch.float32, conts, to_cpu=self.to_cpu)
             if len(gdf_label) > 0:
-                _to_tensor(gdf_label, torch.float32, label)
+                _to_tensor(gdf_label, torch.float32, label, to_cpu=self.to_cpu)
 
         cats_list = [cats[x] for x in sorted(cats.keys())] if cats else None
         conts_list = [conts[x] for x in sorted(conts.keys())] if conts else None
