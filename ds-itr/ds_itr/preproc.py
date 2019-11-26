@@ -154,8 +154,6 @@ class Categorify(TabularProc):
         return n_cat, sz
 
 
-    
-
 class Preprocessor:
     def __init__(
         self, cat_names=None, cont_names=None, label_name=None, ops=None, to_cpu=True
@@ -422,8 +420,8 @@ class Preprocessor:
                 gdf_col = gdf[column]
                 g = gdf_col.to_dlpack()
                 t = from_dlpack(g).type(dtype)
-#                 if non_target:
-#                     t = t.unsqueeze(1) if gdf.shape[1] == 1 else t
+                #                 if non_target:
+                #                     t = t.unsqueeze(1) if gdf.shape[1] == 1 else t
                 t = t.to(torch.device("cpu")) if self.to_cpu else t
                 tensor_list[column] = (
                     t
@@ -461,7 +459,19 @@ class Preprocessor:
         )
 
         # Change cats, conts to dim=1 for column dim=0 for df sub section
-        cats = torch.stack(cats_list, dim=1) if len(cats_list) > 1 else torch.cat(cats_list, dim=0)
-        conts = torch.stack(conts_list, dim=1) if len(conts_list) > 1 else torch.cat(conts_list, dim=0)
-        label = torch.cat(label_list, dim=0) if len(label_list) > 1 else torch.cat(label_list, dim=0)
+        cats = (
+            torch.stack(cats_list, dim=1)
+            if len(cats_list) > 1
+            else torch.cat(cats_list, dim=0)
+        )
+        conts = (
+            torch.stack(conts_list, dim=1)
+            if len(conts_list) > 1
+            else torch.cat(conts_list, dim=0)
+        )
+        label = (
+            torch.cat(label_list, dim=0)
+            if len(label_list) > 1
+            else torch.cat(label_list, dim=0)
+        )
         return cats, conts, label
