@@ -11,9 +11,6 @@ try:
 except ImportError:
     import numpy as cp
 
-warnings.filterwarnings("ignore")
-
-
 def _shuffle_part(gdf):
     sort_key = "__sort_index__"
     arr = cp.arange(len(gdf))
@@ -46,14 +43,14 @@ class Preprocessor:
                     if stat not in self.stats:
                         self.stats[stat] = {}
                     else:
-                        print(
+                        warnings.warn(
                             f"The following statistic was not added because it already exists: {stat}"
                         )
                         break
                 # add actual statistic operator, after all stats added
                 self.stat_ops[stat_op._id] = stat_op
         else:
-            print("No Statistical Operators were loaded")
+            warnings.warn("No Statistical Operators were loaded")
         # after stats are loaded, add df_ops with available stats only
         if df_ops:
             for df_op in df_ops:
@@ -61,11 +58,11 @@ class Preprocessor:
                 if all(name in self.stats for name in dfop_rs):
                     self.df_ops[dfop_id] = df_op
                 else:
-                    print(
-                        f"The following df_op was not added because necessary stats not loaded: {dfop_id, dfop_rs}"
+                    warnings.warn(
+                        f"The following df_op was not added because necessary stats not loaded: {dfop_id}, {dfop_rs}"
                     )
         else:
-            print("No DataFrame Operators were loaded")
+            warnings.warn("No DataFrame Operators were loaded")
 
         self.clear_stats()
 
@@ -128,14 +125,6 @@ class Preprocessor:
     def update_stats(self, itr):
         """ Gather necessary column statistics in single pass.
         """
-
-        #         stats = []
-        #         for op in self.ops:
-        #             if hasattr(op, "req_stats"):
-        #                 for stat in op.req_stats:
-        #                     if not stat in stats:
-        #                         stats.append(stat)
-
         for gdf in itr:
             for name, stat_op in self.stat_ops.items():
                 stat_op.read_itr(gdf, self.cont_names, self.cat_names, self.label_name)
@@ -151,7 +140,7 @@ class Preprocessor:
                 if name in self.stats:
                     self.stats[name] = stat
                 else:
-                    print("stat not found,", name)
+                    warnings.warn("stat not found,", name)
 
     def save_stats(self, path):
 

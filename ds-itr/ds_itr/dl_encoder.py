@@ -4,8 +4,6 @@ import warnings
 import cudf
 import rmm
 
-warnings.filterwarnings("ignore")
-
 
 def _enforce_str(y: cudf.Series) -> cudf.Series:
     """

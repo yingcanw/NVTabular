@@ -5,20 +5,16 @@ import cudf
 from ds_itr.dl_encoder import DLLabelEncoder
 
 
-warnings.filterwarnings("ignore")
-
-
 class Operator:
     @property
     def _id(self):
         return self.__class__.__name__
 
     def describe(self):
-        print("All operators must have a desription.")
-        raise NotImplementedError
+        raise NotImplementedError("All operators must have a desription.")
 
 
-class DF_Op(Operator):
+class DFOperator(Operator):
     def apply_op(
         self,
         gdf: cudf.DataFrame,
@@ -27,53 +23,46 @@ class DF_Op(Operator):
         cat_names: list,
         label_name: list,
     ):
-        print(
+        raise NotImplementedError(
             """The operation to be applied on the data frame chunk, given the required statistics.
                 """
         )
-        raise NotImplementedError
 
     def required_stats(self):
-        print(
+        raise NotImplementedError(
             "Should consist of a list of identifiers, that should map to available statistics"
         )
-        raise NotImplementedError
 
 
-class Stat_Op(Operator):
+class StatOperator(Operator):
     def read_itr(
         self, gdf: cudf.DataFrame, cont_names: list, cat_names: list, label_name: list
     ):
-        print(
+        raise NotImplementedError(
             """The operation to conduct on the dataframe to observe the desired statistics."""
         )
-        raise NotImplementedError
 
     def read_fin(self):
-        print(
+        raise NotImplementedError(
             """Upon finalization of the statistics on all data frame chunks, 
                 this function allows for final transformations on the statistics recorded.
                 Can be 'pass' if unneeded."""
         )
-        raise NotImplementedError
 
     def registered_stats(self):
-        print(
+        raise NotImplementedError(
             """Should return a list of statistics this operator will collect.
                 The list is comprised of simple string values."""
         )
-        raise NotImplementedError
 
     def stats_collected(self):
-        print("""Should return a list of tuples of name and statistics operator.""")
-        raise NotImplementedError
+        raise NotImplementedError("""Should return a list of tuples of name and statistics operator.""")
 
     def clear(self):
-        print("""zero and reinitialize all relevant statistical properties""")
-        raise NotImplementedError
+        raise NotImplementedError("""zero and reinitialize all relevant statistical properties""")
 
 
-class Moments(Stat_Op):
+class Moments(StatOperator):
     counts = {}
     means = {}
     varis = {}
@@ -141,17 +130,21 @@ class Moments(Stat_Op):
         self.stds = {}
         return
 
+    
 
-class Median(Stat_Op):
+class Median(StatOperator):
     batch_medians = {}
     medians = {}
+    
+    def __init__(self, fill=None):
+        self.fill=fill
+        
 
     def read_itr(
         self, gdf: cudf.DataFrame, cont_names: [], cat_names: [], label_name: []
     ):
         """ Iteration-level median algorithm.
         """
-
         # TODO: Use more-accurate approach.
         gdf = gdf[cont_names]
         for name in cont_names:
@@ -159,7 +152,9 @@ class Median(Stat_Op):
                 self.batch_medians[name] = []
             col = gdf[name].copy()
             col = col.dropna().reset_index(drop=True).sort_values()
-            if len(col) > 1:
+            if self.fill:
+                self.batch_medians[name].append(self.fill)
+            elif len(col) > 1:
                 self.batch_medians[name].append(float(col[len(col) // 2]))
             else:
                 self.batch_medians[name].append(0.0)
@@ -188,7 +183,7 @@ class Median(Stat_Op):
         return
 
 
-class Encoder(Stat_Op):
+class Encoder(StatOperator):
     encoders = {}
     categories = {}
 
@@ -227,7 +222,7 @@ class Encoder(Stat_Op):
         return
 
 
-class Normalize(DF_Op):
+class Normalize(DFOperator):
     """ Normalize the continuous variables.
     """
 
@@ -257,7 +252,7 @@ class Normalize(DF_Op):
         return gdf
 
 
-class FillMissing(DF_Op):
+class FillMissing(DFOperator):
     MEDIAN = "median"
     CONSTANT = "constant"
 
@@ -300,7 +295,7 @@ class FillMissing(DF_Op):
         return gdf
 
 
-class Categorify(DF_Op):
+class Categorify(DFOperator):
     """ Transform the categorical variables to that type.
     """
 

@@ -1,6 +1,5 @@
 import warnings
 
-warnings.filterwarnings("ignore")
 import cudf
 
 import sys
@@ -106,9 +105,9 @@ class PQFileReader(GPUFileReader):
         self.row_size = self.row_size or 0
         if self.num_rows > 0 and self.row_size == 0:
             for col in self.reader(self.file, nrows=min(10, self.num_rows))._columns:
-                if col.dtype == "object":
+                if col.dtype.name in "object":
                     # Use maximum of first 10 rows
-                    max_size = len(max(col)) // 2
+                    max_size = len(max(cudf.Series(col).dropna())) // 2
                     self.row_size += int(max_size)
                 else:
                     self.row_size += col.dtype.itemsize
