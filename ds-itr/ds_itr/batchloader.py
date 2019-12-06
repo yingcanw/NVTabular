@@ -82,7 +82,9 @@ class TensorItr:
         self.tensors = [tensor[idx] for tensor in self.tensors]
 
 
-def create_tensors(gdf, preproc=None, cat_names=None, cont_names=None, label_name=None):
+def create_tensors(
+    gdf, preproc=None, cat_names=None, cont_names=None, label_name=None, to_cpu=False
+):
     # insert preprocessor
     # transform cats here
     gdf = gdf[0]
@@ -92,45 +94,31 @@ def create_tensors(gdf, preproc=None, cat_names=None, cont_names=None, label_nam
     del gdf
     cats, conts, label = {}, {}, {}
     if len(gdf_cats) > 0:
-        to_tensor(gdf_cats, torch.long, cats)
+        to_tensor(gdf_cats, torch.long, cats, to_cpu=to_cpu)
     if len(gdf_conts) > 0:
-        to_tensor(gdf_conts, torch.float32, conts)
+        to_tensor(gdf_conts, torch.float32, conts, to_cpu=to_cpu)
     if len(gdf_label) > 0:
-        to_tensor(gdf_label, torch.float32, label, non_target=False)
+        to_tensor(gdf_label, torch.float32, label, to_cpu=to_cpu)
     del gdf_cats, gdf_label, gdf_conts
     tar_col = cats.keys()
     cats_list = [cats[x] for x in sorted(cats.keys())] if cats else None
     conts_list = [conts[x] for x in sorted(conts.keys())] if conts else None
     label_list = [label[x] for x in sorted(label.keys())] if label else None
     del cats, conts, label
-    cats = (
-        torch.stack(cats_list, dim=1)
-        if len(cats_list) > 1
-        else torch.cat(cats_list, dim=0)
-    )
-    conts = (
-        torch.stack(conts_list, dim=1)
-        if len(conts_list) > 1
-        else torch.cat(conts_list, dim=0)
-    )
-    label = (
-        torch.cat(label_list, dim=0)
-        if len(label_list) > 1
-        else torch.cat(label_list, dim=0)
-    )
+    cats = torch.stack(cats_list, dim=1) if len(cats_list) > 0 else None
+    conts = torch.stack(conts_list, dim=1) if len(conts_list) > 0 else None
+    label = torch.cat(label_list, dim=0) if len(label_list) > 0 else None
     return cats, conts, label
 
 
-def to_tensor(gdf: cudf.DataFrame, dtype, tensor_list, non_target=True):
+def to_tensor(gdf: cudf.DataFrame, dtype, tensor_list, to_cpu=False):
     if gdf.empty:
         return
     for column in gdf.columns:
         gdf_col = gdf[column]
         g = gdf_col.to_dlpack()
         t = from_dlpack(g).type(dtype)
-        if non_target:
-            t = t.unsqueeze(1) if gdf.shape[1] == 1 else t
-        #             t = t.to(self.to_cpu) if self.to_cpu else t
+        t = t.to(torch.device("cpu")) if to_cpu else t
         tensor_list[column] = (
             t if column not in tensor_list else torch.cat([tensor_list[column], t])
         )
