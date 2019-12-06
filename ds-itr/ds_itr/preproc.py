@@ -37,34 +37,39 @@ class Preprocessor:
         self.stats = {}
         self.to_cpu = to_cpu
         if stat_ops:
-            for stat_op in stat_ops:
-                # pull stats, ensure no duplicates
-                for stat in stat_op.registered_stats():
-                    if stat not in self.stats:
-                        self.stats[stat] = {}
-                    else:
-                        warnings.warn(
-                            f"The following statistic was not added because it already exists: {stat}"
-                        )
-                        break
-                # add actual statistic operator, after all stats added
-                self.stat_ops[stat_op._id] = stat_op
+            self.reg_stat_ops(stat_ops)
         else:
             warnings.warn("No Statistical Operators were loaded")
         # after stats are loaded, add df_ops with available stats only
         if df_ops:
-            for df_op in df_ops:
-                dfop_id, dfop_rs = df_op._id, df_op.req_stats
-                if all(name in self.stats for name in dfop_rs):
-                    self.df_ops[dfop_id] = df_op
-                else:
-                    warnings.warn(
-                        f"The following df_op was not added because necessary stats not loaded: {dfop_id}, {dfop_rs}"
-                    )
+            self.reg_df_ops(df_ops)
         else:
             warnings.warn("No DataFrame Operators were loaded")
 
         self.clear_stats()
+
+    
+    def reg_df_ops(self, df_ops):
+        for df_op in df_ops:
+            dfop_id, dfop_rs = df_op._id, df_op.req_stats
+            self.reg_stat_ops(dfop_rs)
+            self.df_ops[dfop_id] = df_op
+    
+    
+    def reg_stat_ops(self, stat_ops):
+        for stat_op in stat_ops:
+            # pull stats, ensure no duplicates
+            for stat in stat_op.registered_stats():
+                if stat not in self.stats:
+                    self.stats[stat] = {}
+                else:
+                    warnings.warn(
+                        f"The following statistic was not added because it already exists: {stat}"
+                    )
+            # add actual statistic operator, after all stats added
+            self.stat_ops[stat_op._id] = stat_op        
+    
+    
 
     def write_to_dataset(
         self, path, itr, apply_ops=False, nfiles=1, shuffle=True, **kwargs

@@ -12,8 +12,6 @@ try:
 except ImportError:
     import numpy as cp
 
-warnings.filterwarnings("ignore")
-
 
 class FileIterator:
     def __init__(self, path, nfiles, shuffle=True, **kwargs):

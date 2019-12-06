@@ -96,7 +96,7 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,
-        stat_ops=[ops.Moments(), ops.Median(), ops.Encoder()],
+        stat_ops=[],
         df_ops=[ops.FillMissing(), ops.Normalize(), ops.Categorify()],
         to_cpu=True,
     )
@@ -113,6 +113,7 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     if dump:
         config_file = tmpdir + "/temp.yaml"
         processor.save_stats(config_file)
+        import pdb; pdb.set_trace()
         processor.clear_stats()
         processor.load_stats(config_file)
 

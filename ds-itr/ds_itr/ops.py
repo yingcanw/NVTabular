@@ -61,6 +61,55 @@ class StatOperator(Operator):
     def clear(self):
         raise NotImplementedError("""zero and reinitialize all relevant statistical properties""")
 
+class MinMax(StatOperator):
+    batch_mins = {}
+    batch_maxs = {}
+    mins = {}
+    maxs = {}
+    
+    def read_itr(
+        self, gdf: cudf.DataFrame, cont_names: [], cat_names: [], label_name: []
+    ):
+        """ Iteration level Min Max collection, a chunk at a time
+        """
+        cat_cont = gdf[cont_names + cat_names]
+        for col in cont_names + cat_names:
+            if col not in self.batch_mins:
+                self.batch_mins[col] = []
+            if col not in self.batch_maxs:
+                self.batch_maxs[col] = []
+            col_min = min(gdf[col].dropna())
+            col_max = max(gdf[col].dropna())
+            self.batch_mins[col].append(col_min)
+            self.batch_maxs[col].append(col_max)
+        return
+    
+    def read_fin(self):
+        for col in self.batch_mins.keys():
+            self.mins[col] = min(self.batch_mins[col])
+            self.maxs[col] = max(self.batch_maxs[col])
+        return
+
+    def registered_stats(self):
+        return ["mins", "maxs", "batch_mins", "batch_maxs"]
+        
+        
+    def stats_collected(self):
+        result = [
+            ("mins", self.mins),
+            ("maxs", self.maxs),
+            ("batch_mins", self.batch_mins),
+            ("batch_maxs", self.batch_maxs)
+        ]
+        return result
+    
+    def clear(self):
+        self.batch_mins = {}
+        self.batch_maxs = {}
+        self.mins = {}
+        self.maxs = {}
+        return
+        
 
 class Moments(StatOperator):
     counts = {}
@@ -118,15 +167,15 @@ class Moments(StatOperator):
         result = [
             ("means", self.means),
             ("stds", self.stds),
-            ("vars", self.vars),
-            ("counts", self.counts),
+            ("vars", self.varis),
+            ("counts", self.counts)
         ]
         return result
 
     def clear(self):
         self.counts = {}
         self.means = {}
-        self.vars = {}
+        self.varis = {}
         self.stds = {}
         return
 
@@ -228,7 +277,7 @@ class Normalize(DFOperator):
 
     @property
     def req_stats(self):
-        return ["means", "stds"]
+        return [Moments()]
 
     def apply_op(
         self,
@@ -264,7 +313,7 @@ class FillMissing(DFOperator):
 
     @property
     def req_stats(self):
-        return ["medians"]
+        return [Median()]
 
     def apply_op(
         self,
@@ -304,7 +353,7 @@ class Categorify(DFOperator):
 
     @property
     def req_stats(self):
-        return ["encoders"]
+        return [Encoder()]
 
     def apply_op(
         self,
