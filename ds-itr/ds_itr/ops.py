@@ -56,10 +56,14 @@ class StatOperator(Operator):
         )
 
     def stats_collected(self):
-        raise NotImplementedError("""Should return a list of tuples of name and statistics operator.""")
+        raise NotImplementedError(
+            """Should return a list of tuples of name and statistics operator."""
+        )
 
     def clear(self):
-        raise NotImplementedError("""zero and reinitialize all relevant statistical properties""")
+        raise NotImplementedError(
+            """zero and reinitialize all relevant statistical properties"""
+        )
 
         
 class MinMax(StatOperator):
@@ -181,15 +185,13 @@ class Moments(StatOperator):
         self.stds = {}
         return
 
-    
 
 class Median(StatOperator):
     batch_medians = {}
     medians = {}
-    
+
     def __init__(self, fill=None):
-        self.fill=fill
-        
+        self.fill = fill
 
     def read_itr(
         self, gdf: cudf.DataFrame, cont_names: [], cat_names: [], label_name: []
