@@ -148,10 +148,14 @@ class Preprocessor:
         for col, cat in self.stats["categories"].items():
             host_categories[col] = cat.to_host()
 
-        self.stats["host_categories"] = host_categories
-
+        # Cannot dump categorical classes
+        data = {
+            key: val for key, val in self.stats.items()
+            if key not in ["categories", "encoders"]
+        }
+        data["host_categories"] = host_categories
         with open(path, "w") as outfile:
-            yaml.dump(self.stats, outfile, default_flow_style=False)
+            yaml.dump(data, outfile, default_flow_style=False)
 
     def load_stats(self, path):
         def _set_stats(self, stats_dict):
