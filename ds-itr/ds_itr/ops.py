@@ -61,9 +61,10 @@ class StatOperator(Operator):
     def clear(self):
         raise NotImplementedError("""zero and reinitialize all relevant statistical properties""")
 
+        
 class MinMax(StatOperator):
-    batch_mins = {}
-    batch_maxs = {}
+    batch_mins = cudf.DataFrame()
+    batch_maxs = cudf.DataFrame()
     mins = {}
     maxs = {}
     
@@ -72,20 +73,21 @@ class MinMax(StatOperator):
     ):
         """ Iteration level Min Max collection, a chunk at a time
         """
-        cat_cont = gdf[cont_names + cat_names]
         for col in cont_names + cat_names:
-            if col not in self.batch_mins:
-                self.batch_mins[col] = []
-            if col not in self.batch_maxs:
-                self.batch_maxs[col] = []
             col_min = min(gdf[col].dropna())
             col_max = max(gdf[col].dropna())
+            if not col in self.batch_mins:
+                self.batch_mins[col] = []
+                self.batch_maxs[col] = []
             self.batch_mins[col].append(col_min)
             self.batch_maxs[col].append(col_max)
         return
     
     def read_fin(self):
+        
         for col in self.batch_mins.keys():
+            self.batch_mins[col] = cudf.Series(self.batch_mins[col]).tolist()
+            self.batch_maxs[col] = cudf.Series(self.batch_maxs[col]).tolist()
             self.mins[col] = min(self.batch_mins[col])
             self.maxs[col] = max(self.batch_maxs[col])
         return

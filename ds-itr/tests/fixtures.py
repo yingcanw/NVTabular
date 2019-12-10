@@ -19,7 +19,7 @@ mynames = [
     "Dan",
     "Edith",
     "Frank",
-    None,
+    "Gary",
     "Hannah",
     "Ingrid",
     "Jerry",
@@ -29,7 +29,7 @@ mynames = [
     "Norbert",
     "Oliver",
     "Patricia",
-    None,
+    "Quinn",
     "Ray",
     "Sarah",
     "Tim",
@@ -79,9 +79,10 @@ def datasets(tmpdir_factory):
     for col in df.columns:
         if col in ["name-cat", "label"]:
             break
-        df[col].iloc[random.randint(0, imax)] = None
-        df[col].iloc[random.randint(0, imax)] = None
+        df[col].iloc[random.randint(1, imax-1)] = None
+        df[col].iloc[random.randint(1, imax-1)] = None
 
+        
     datadir = tmpdir_factory.mktemp("data")
     datadir = {
         "parquet": tmpdir_factory.mktemp("parquet"),
