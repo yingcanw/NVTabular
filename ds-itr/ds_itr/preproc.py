@@ -11,6 +11,7 @@ try:
 except ImportError:
     import numpy as cp
 
+
 def _shuffle_part(gdf):
     sort_key = "__sort_index__"
     arr = cp.arange(len(gdf))
@@ -150,7 +151,8 @@ class Preprocessor:
 
         # Cannot dump categorical classes
         data = {
-            key: val for key, val in self.stats.items()
+            key: val
+            for key, val in self.stats.items()
             if key not in ["categories", "encoders"]
         }
         data["host_categories"] = host_categories
