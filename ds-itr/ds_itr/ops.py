@@ -13,8 +13,22 @@ class Operator:
     def describe(self):
         raise NotImplementedError("All operators must have a desription.")
 
+class FeatEngOperator(Operator):
+    def apply_op(
+        self,
+        gdf: cudf.DataFrame,
+        cont_names: list,
+        cat_names: list,
+        label_name: list,
+    ):
+        raise NotImplementedError(
+            """The operation to be applied on the data frame chunk, given the required statistics.
+                """
+        )
+
 
 class DFOperator(Operator):
+
     def apply_op(
         self,
         gdf: cudf.DataFrame,
@@ -27,7 +41,8 @@ class DFOperator(Operator):
             """The operation to be applied on the data frame chunk, given the required statistics.
                 """
         )
-
+    
+    
     def required_stats(self):
         raise NotImplementedError(
             "Should consist of a list of identifiers, that should map to available statistics"
@@ -65,10 +80,10 @@ class StatOperator(Operator):
             """zero and reinitialize all relevant statistical properties"""
         )
 
-        
+
 class MinMax(StatOperator):
-    batch_mins = cudf.DataFrame()
-    batch_maxs = cudf.DataFrame()
+    batch_mins = {}
+    batch_maxs = {}
     mins = {}
     maxs = {}
     
@@ -90,6 +105,8 @@ class MinMax(StatOperator):
     def read_fin(self):
         
         for col in self.batch_mins.keys():
+            # required for exporting values later, 
+            # must move values from gpu if cupy->numpy not supported
             self.batch_mins[col] = cudf.Series(self.batch_mins[col]).tolist()
             self.batch_maxs[col] = cudf.Series(self.batch_maxs[col]).tolist()
             self.mins[col] = min(self.batch_mins[col])
@@ -267,14 +284,50 @@ class Encoder(StatOperator):
 
     def stats_collected(self):
         result = [("encoders", self.encoders), ("categories", self.categories)]
-        return result
+        return result    
 
     def clear(self):
         self.encoders = {}
         self.categories = {}
-        return
+        return    
+
+    
+class Export(FeatEngOperator):
+    
+    def __init__(self, path, nfiles=1, shuffle=True, **kwargs):
+        self.path = path
+        self.nfiles = nfiles
+        self.shuffle = True
+    
+    def apply_op(
+        self,
+        gdf: cudf.DataFrame,
+        cont_names: list,
+        cat_names: list,
+        label_name: list,
+    ):
+        writer = DatasetWriter(self.path, nfiles=self.nfiles)
+        writer.write(gdf, shuffle=self.shuffle)
+        writer.write_metadata()
+        return 
 
 
+    
+class LogOp(FeatEngOperator):
+    
+    def apply_op(
+        self,
+        gdf: cudf.DataFrame,
+        cont_names: list,
+        cat_names: list,
+        label_name: list,
+    ):
+        if not cont_names:
+            return gdf
+        gdf = np.log(gdf[cont_names].astype(np.float32)) + gdf[cat_names]
+        return gdf   
+
+    
 class Normalize(DFOperator):
     """ Normalize the continuous variables.
     """

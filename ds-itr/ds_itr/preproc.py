@@ -11,7 +11,6 @@ try:
 except ImportError:
     import numpy as cp
 
-
 def _shuffle_part(gdf):
     sort_key = "__sort_index__"
     arr = cp.arange(len(gdf))
@@ -26,6 +25,7 @@ class Preprocessor:
         cat_names=None,
         cont_names=None,
         label_name=None,
+        feat_ops=None,
         stat_ops=None,
         df_ops=None,
         to_cpu=True,
@@ -33,10 +33,13 @@ class Preprocessor:
         self.cat_names = cat_names or []
         self.cont_names = cont_names or []
         self.label_name = label_name or []
+        self.feat_ops = {}
         self.stat_ops = {}
         self.df_ops = {}
         self.stats = {}
         self.to_cpu = to_cpu
+        if feat_ops:
+            self.reg_feat_ops(feat_ops)
         if stat_ops:
             self.reg_stat_ops(stat_ops)
         else:
@@ -49,6 +52,10 @@ class Preprocessor:
 
         self.clear_stats()
 
+    def reg_feat_ops(self, feat_ops):
+        for feat_op in feat_ops:
+            self.feat_ops[feat_op._id] = feat_op
+    
     
     def reg_df_ops(self, df_ops):
         for df_op in df_ops:
@@ -69,7 +76,6 @@ class Preprocessor:
                     )
             # add actual statistic operator, after all stats added
             self.stat_ops[stat_op._id] = stat_op        
-    
     
 
     def write_to_dataset(
@@ -132,6 +138,8 @@ class Preprocessor:
         """ Gather necessary column statistics in single pass.
         """
         for gdf in itr:
+            for name, feat_op in self.feat_ops.items():
+                gdf = feat_op.apply_op(gdf, self.cont_names, self.cat_names, self.label_name)
             for name, stat_op in self.stat_ops.items():
                 stat_op.read_itr(gdf, self.cont_names, self.cat_names, self.label_name)
         for name, stat_op in self.stat_ops.items():
@@ -154,15 +162,10 @@ class Preprocessor:
         for col, cat in self.stats["categories"].items():
             host_categories[col] = cat.to_host()
 
-        # Cannot dump categorical classes
-        data = {
-            key: val
-            for key, val in self.stats.items()
-            if key not in ["categories", "encoders"]
-        }
-        data["host_categories"] = host_categories
+        self.stats["host_categories"] = host_categories
+
         with open(path, "w") as outfile:
-            yaml.dump(data, outfile, default_flow_style=False)
+            yaml.dump(self.stats, outfile, default_flow_style=False)
 
     def load_stats(self, path):
         def _set_stats(self, stats_dict):
@@ -224,6 +227,8 @@ class Preprocessor:
         cats, conts, label = {}, {}, {}
         for gdf in itr:
             if apply_ops:
+                for name, feat_op in self.feat_ops.items():
+                    gdf = feat_op.apply_op(gdf, self.cont_names, self.cat_names, self.label_name)
                 gdf = self.apply_ops(gdf)
 
             gdf_cats, gdf_conts, gdf_label = (

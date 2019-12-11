@@ -131,6 +131,14 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     assert math.isclose(x_median, processor.stats["medians"]["x"], rel_tol=1e1)
     assert math.isclose(y_median, processor.stats["medians"]["y"], rel_tol=1e1)
     assert math.isclose(id_median, processor.stats["medians"]["id"], rel_tol=1e-2)
+    x_min = min(df["x"])
+    y_min = min(df["y"])
+    assert x_min == processor.stats["mins"]["x"]
+    assert y_min == processor.stats["mins"]["y"]
+    x_max = max(df["x"])
+    y_max = max(df["y"])
+    assert x_max == processor.stats["maxs"]["x"]
+    assert y_max == processor.stats["maxs"]["y"]    
 
     # Check that categories match
     if engine == "parquet":
