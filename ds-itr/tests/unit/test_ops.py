@@ -16,8 +16,7 @@ import os
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
-@pytest.mark.parametrize("dump", [True, False])
-def test_minmax(tmpdir, datasets, dump, gpu_memory_frac, engine):
+def test_minmax(tmpdir, datasets, gpu_memory_frac, engine):
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
 
     if engine == "parquet":
@@ -59,18 +58,21 @@ def test_minmax(tmpdir, datasets, dump, gpu_memory_frac, engine):
 
     x_min = min(df["x"])
     y_min = min(df["y"])
+    name_min = min(df["name-string"])
     assert x_min == processor.stats["mins"]["x"]
     assert y_min == processor.stats["mins"]["y"]
+    assert name_min == processor.stats["mins"]["name-string"]
     x_max = max(df["x"])
     y_max = max(df["y"])
+    name_max = max(df["name-string"])
     assert x_max == processor.stats["maxs"]["x"]
-    assert y_max == processor.stats["maxs"]["y"]    
+    assert y_max == processor.stats["maxs"]["y"]
+    assert name_max == processor.stats["maxs"]["name-string"]
 
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
-@pytest.mark.parametrize("dump", [True, False])    
-def test_moments(tmpdir, datasets, dump, gpu_memory_frac, engine):
+def test_moments(tmpdir, datasets, gpu_memory_frac, engine):
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
 
     if engine == "parquet":
@@ -121,8 +123,7 @@ def test_moments(tmpdir, datasets, dump, gpu_memory_frac, engine):
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
-@pytest.mark.parametrize("dump", [True, False])
-def test_encoder(tmpdir, datasets, dump, gpu_memory_frac, engine):
+def test_encoder(tmpdir, datasets, gpu_memory_frac, engine):
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
 
     if engine == "parquet":
@@ -174,8 +175,7 @@ def test_encoder(tmpdir, datasets, dump, gpu_memory_frac, engine):
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
-@pytest.mark.parametrize("dump", [True, False])
-def test_median(tmpdir, datasets, dump, gpu_memory_frac, engine):
+def test_median(tmpdir, datasets, gpu_memory_frac, engine):
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
 
     if engine == "parquet":
@@ -224,3 +224,39 @@ def test_median(tmpdir, datasets, dump, gpu_memory_frac, engine):
     assert math.isclose(id_median, processor.stats["medians"]["id"], rel_tol=1e-2)
 
 
+@pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
+@pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
+def test_log(tmpdir, datasets, gpu_memory_frac, engine):
+    paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
+
+    if engine == "parquet":
+        df1 = cudf.read_parquet(paths[0])[mycols_pq]
+        df2 = cudf.read_parquet(paths[1])[mycols_pq]
+    else:
+        df1 = cudf.read_csv(paths[0], header=False, names=allcols_csv)[mycols_csv]
+        df2 = cudf.read_csv(paths[1], header=False, names=allcols_csv)[mycols_csv]
+    df = cudf.concat([df1, df2], axis=0)
+    df["id"] = df["id"].astype("int64")
+
+    if engine == "parquet":
+        cat_names = ["name-cat", "name-string"]
+        columns = mycols_pq
+    else:
+        cat_names = ["name-string"]
+        columns = mycols_csv
+    cont_names = ["x", "y", "id"]
+    label_name = ["label"]
+
+    data_itr = ds.GPUDatasetIterator(
+        paths,
+        columns=columns,
+        use_row_groups=True,
+        gpu_memory_frac=gpu_memory_frac,
+        names=allcols_csv,
+    )
+       
+    log_op = ops.LogOp()
+
+    for gdf in data_itr:
+        new_gdf = log_op.apply_op(gdf, cat_names, cont_names, label_name)
+        assert new_gdf[cont_names] == np.log(gdf[cont_names].astype(np.float32))
