@@ -4,6 +4,7 @@ import cudf
 
 import sys
 import numba
+import threading
 
 
 #
@@ -96,7 +97,6 @@ class PQFileReader(GPUFileReader):
             self.columns,
         ) = cudf.io.read_parquet_metadata(self.file)
         self.file.seek(0)
-
         # Use first row-group metadata to estimate memory-rqs
         # NOTE: We could also use parquet metadata here, but
         #       `total_uncompressed_size` for each column is
@@ -107,12 +107,13 @@ class PQFileReader(GPUFileReader):
             for col in self.reader(self.file, nrows=min(10, self.num_rows))._columns:
                 if col.dtype.name in "object":
                     # Use maximum of first 10 rows
-                    max_size = len(max(cudf.Series(col).dropna())) // 2
+                    target = cudf.Series(col).nans_to_nulls().dropna()
+                    import pdb; pdb.set_trace()
+                    max_size = len(max(target)) // 2
                     self.row_size += int(max_size)
                 else:
                     self.row_size += col.dtype.itemsize
             self.file.seek(0)
-
         # Check if wwe are using row groups
         self.use_row_groups = kwargs.get("use_row_groups", None)
         self.row_group_batch = 1
@@ -170,6 +171,7 @@ class CSVFileReader(GPUFileReader):
     def intialize_reader(self, gpu_memory_frac, batch_size, **kwargs):
         self.reader = cudf.read_csv
         self.file = open(self.file_path, "r")
+        
 
         # Count rows and determine column names
         self.columns = []
@@ -186,6 +188,9 @@ class CSVFileReader(GPUFileReader):
         # Use first row to estimate memory-reqs
         names = kwargs.get("names", None)
         dtype = kwargs.get("dtype", None)
+        # default csv delim is ","
+        sep = kwargs.get("sep", ",")
+        self.sep = sep
         self.names = []
         dtype_inf = {}
         if self.num_rows > 0:
@@ -196,6 +201,7 @@ class CSVFileReader(GPUFileReader):
                     names=names,
                     header=False,
                     dtype=dtype,
+                    sep=sep
                 )._columns
             ):
                 if names:
@@ -206,7 +212,7 @@ class CSVFileReader(GPUFileReader):
                 if estimate_row_size:
                     if col.dtype == "object":
                         # Use maximum of first 10 rows
-                        max_size = len(max(col)) // 2
+                        max_size = len(max(col.dropna())) // 2
                         self.row_size += int(max_size)
                     else:
                         self.row_size += col.dtype.itemsize
@@ -223,7 +229,7 @@ class CSVFileReader(GPUFileReader):
     def read_file_batch(self, nskip=0, columns=None, **kwargs):
         batch = min(self.batch_size, self.num_rows - nskip)
         chunk = self.reader(
-            self.file_path, nrows=batch, skiprows=nskip, names=self.names, header=False
+            self.file_path, nrows=batch, skiprows=nskip, names=self.names, header=False, sep=self.sep
         )
         if columns:
             for col in columns:
@@ -249,6 +255,7 @@ class GPUFileIterator:
         dtype=None,
         names=None,
         row_size=None,
+        **kwargs
     ):
         self.file_path = file_path
         self.engine = _get_read_engine(
@@ -260,10 +267,12 @@ class GPUFileIterator:
             dtype=dtype,
             names=names,
             row_size=None,
+            **kwargs
         )
         self.columns = columns
         self.file_size = self.engine.num_rows
         self.rows_processed = 0
+        self.cur_chunk = None
 
     def __iter__(self):
         self.rows_processed = 0
@@ -274,18 +283,24 @@ class GPUFileIterator:
         return self.file_size // self.engine.batch_size + add_on
 
     def __next__(self):
-
         if self.rows_processed >= self.file_size:
             raise StopIteration
-
-        chunk = self.engine.read_file_batch(
-            nskip=self.rows_processed, columns=self.columns
-        )
-
-        self.rows_processed += len(chunk)
+        if not self.cur_chunk:
+            self._load_chunk()
+        chunk = self.cur_chunk
+        threading.Thread(target=self._load_chunk).start()
         return chunk
 
-
+    def _load_chunk(self):
+        # retrieve missing final chunk from fileset, 
+        # will fail on last try before stop iteration in __next__
+        if self.rows_processed < self.file_size:
+            self.cur_chunk = self.engine.read_file_batch(
+                nskip=self.rows_processed, columns=self.columns
+            )
+            self.rows_processed += self.cur_chunk.shape[0]
+    
+    
 #
 # GPUDatasetIterator (Iterates through multiple files)
 #
@@ -303,7 +318,9 @@ class GPUDatasetIterator:
         self.num_paths = len(paths)
         self.kwargs = kwargs
         self.itr = None
+        self.next_itr = None
         self.next_path_ind = 0
+
 
     def __iter__(self):
         self.itr = None
@@ -325,3 +342,36 @@ class GPUDatasetIterator:
                 path = self.paths[self.next_path_ind]
                 self.next_path_ind += 1
                 self.itr = GPUFileIterator(path, **self.kwargs)
+        
+        
+#     def __iter__(self):
+#         self.itr = None
+#         self.next_path_ind = 0
+#         self.__load_next()
+#         return self
+    
+#     def __load_next(self):
+#         if self.next_path_ind <= self.num_paths:
+#             print('swaping and loading new chunk')
+#             # swap to new current
+#             self.itr = self.next_itr
+#             # load up the new next
+#             self.next_itr = GPUFileIterator(self.paths[self.next_path_ind], **self.kwargs)
+#             self.next_path_ind += 1
+
+    
+#     def __next__(self):
+#         print('hit next')
+#         if not self.itr:
+#             self.__load_next()
+#         while True:
+#             try:
+#                 print('loading next')
+#                 return self.itr.__next__()
+#             except StopIteration:
+#                 print('stop iteration called')
+#                 if self.next_path_ind >= self.num_paths:
+#                     raise StopIteration
+#                 threading.Thread(target=self.__load_next).start()
+                
+

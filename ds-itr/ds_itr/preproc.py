@@ -40,11 +40,6 @@ class Preprocessor:
         self.to_cpu = to_cpu
         if feat_ops:
             self.reg_feat_ops(feat_ops)
-        if stat_ops:
-            self.reg_stat_ops(stat_ops)
-        else:
-            warnings.warn("No Statistical Operators were loaded")
-        # after stats are loaded, add df_ops with available stats only
         if df_ops:
             self.reg_df_ops(df_ops)
         else:

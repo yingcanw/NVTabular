@@ -34,6 +34,7 @@ class FileIterator:
         if self.ind >= self.nfiles:
             raise StopIteration
         self.ind += 1
+        # if self.name, return that naming convention.
         return "%s/ds_part.%d.parquet" % (self.path, self.ind - 1)
 
 

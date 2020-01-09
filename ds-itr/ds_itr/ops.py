@@ -1,5 +1,5 @@
 import warnings
-
+import os
 import numpy as np
 import cudf
 from ds_itr.dl_encoder import DLLabelEncoder
@@ -256,28 +256,40 @@ class Median(StatOperator):
 class Encoder(StatOperator):
     encoders = {}
     categories = {}
+    count = 0
 
     def read_itr(
         self, gdf: cudf.DataFrame, cont_names: [], cat_names: [], label_name: []
     ):
         """ Iteration-level categorical encoder update.
         """
+        self.count = self.count + 1
         if not cat_names:
             return
         for name in cat_names:
             if not name in self.encoders:
-                self.encoders[name] = DLLabelEncoder()
-                self.encoders[name].fit(gdf[name])
-            else:
-                self.encoders[name].update_fit(gdf[name])
+                self.encoders[name] = DLLabelEncoder(name)
+                gdf[name].append([None])
+            self.encoders[name].fit(gdf[name])
+#             if self.count % 100 == 0:
+#                 print(name, self.encoders[name]._cats.shape)
         return
 
     def read_fin(self, *args):
         """ Finalize categorical encoders (get categories).
         """
         for name, val in self.encoders.items():
-            self.categories[name] = val._cats.keys()
-        return
+            self.categories[name] = self.cat_read_all_files(val)
+        return 
+    
+    def cat_read_all_files(self, cat_obj):
+        cat_size = cat_obj._cats.shape[0]
+        file_paths = [f"{cat_obj.col}/{x}" for x in os.listdir(cat_obj.col) if x.endswith('parquet')] if os.path.exists(cat_obj.col) else []
+        for fi in file_paths:
+            chunk = cudf.read_parquet(fi)
+            cat_size = cat_size + chunk.shape[0]
+        return cat_size
+        
 
     def registered_stats(self):
         return ["encoders", "categories"]
@@ -311,7 +323,21 @@ class Export(FeatEngOperator):
         writer.write_metadata()
         return 
 
-
+class ZeroFill(FeatEngOperator):
+    def apply_op(
+        self,
+        gdf: cudf.DataFrame,
+        cont_names: list,
+        cat_names: list,
+        label_name: list,
+    ):
+        if not cont_names:
+            return gdf
+        z_gdf = gdf[cont_names].fillna(0)
+        z_gdf[z_gdf < 0] = 0
+        return cudf.concat([gdf[label_name], gdf[cat_names], z_gdf], axis=1)
+    
+    
     
 class LogOp(FeatEngOperator):
     
@@ -324,8 +350,8 @@ class LogOp(FeatEngOperator):
     ):
         if not cont_names:
             return gdf
-        gdf = np.log(gdf[cont_names].astype(np.float32)) + gdf[cat_names]
-        return gdf   
+        new_gdf = np.log(gdf[cont_names].astype(np.float32) + 1)
+        return cudf.concat([gdf[label_name], gdf[cat_names], new_gdf], axis=1)
 
     
 class Normalize(DFOperator):
@@ -432,8 +458,8 @@ class Categorify(DFOperator):
 
     def get_emb_sz(self, encoders, cat_names):
         work_in = {}
-        for key, val in encoders.items():
-            work_in[key] = len(val._cats.keys()) + 1
+        for key in encoders.keys():
+            work_in[key] = encoders[key] + 1
         ret_list = [(n, self.def_emb_sz(work_in, n)) for n in sorted(cat_names)]
         return ret_list
 

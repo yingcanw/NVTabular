@@ -1,9 +1,14 @@
 import numpy as np
+import nvstrings
 import nvcategory
 import warnings
 import cudf
 import rmm
-
+import numba
+import ds_itr.ds_iterator as ds_itr
+import ds_itr.ds_writer as ds_wtr
+import os
+import pyarrow.parquet as pq
 
 def _enforce_str(y: cudf.Series) -> cudf.Series:
     """
@@ -21,35 +26,12 @@ def _enforce_npint32(y: cudf.Series) -> cudf.Series:
 
 
 class DLLabelEncoder(object):
-    def __init__(self, *args, **kwargs):
-        self._cats: nvcategory.nvcategory = None
+    def __init__(self, col, *args, **kwargs):
+        self._cats= cudf.Series()
         self._dtype = None
-        self._fitted: bool = False
-
-    def _check_is_fitted(self):
-        if not self._fitted:
-            raise RuntimeError("Model must first be .fit()")
-
-    def fit(self, y: cudf.Series) -> "LabelEncoder":
-        """
-        Fit a LabelEncoder (nvcategory) instance to a set of categories
-        Parameters
-        ---------
-        y : cudf.Series
-            Series containing the categories to be encoded. It's elements
-            may or may not be unique
-        Returns
-        -------
-        self : LabelEncoder
-            A fitted instance of itself to allow method chaining
-        """
-        self._dtype = y.dtype
-
-        y = _enforce_str(y)
-
-        self._cats = nvcategory.from_strings(y.data)
-        self._fitted = True
-        return self
+        # writer needs to be mapped to same file in folder.
+        self.folder_path = col
+        self.col = col
 
     def transform(self, y: cudf.Series, unk_idx=0) -> cudf.Series:
         """
@@ -71,69 +53,82 @@ class DLLabelEncoder(object):
         KeyError
             if a category appears that was not seen in `fit`
         """
-        self._check_is_fitted()
+        # Need to watch out for None calls now
         y = _enforce_str(y)
-        encoded = cudf.Series(
-            nvcategory.from_strings(y.data).set_keys(self._cats.keys()).values()
-        )
-
-        if encoded.isin([-1]).any() and unk_idx < 0:
-            raise KeyError("Attempted to encode unseen key")
+        encoded = None
+        if os.path.exists(self.col):
+            #some cats in memory some in disk
+            file_paths = [f"{self.col}/{x}" for x in os.listdir(self.col) if x.endswith('parquet')]
+            if file_paths:
+                chunks = ds_itr.GPUDatasetIterator(file_paths)
+                encoded = cudf.Series()
+                rec_count = 0
+                #chunks represents a UNIQUE set of categorical representations
+                for chunk in chunks:
+                    #must reconstruct encoded series from multiple parts 
+                    part_encoded = cudf.Series(
+                        nvcategory.from_strings(y.data).set_keys(chunk[self.col].data).values()
+                    )
+                    # zero out unknowns
+                    part_encoded.replace(-1, 0)
+                    part_encoded[part_encoded > 0].add(rec_count)
+                    # continually add chunks to encoded to get full batch  
+                    encoded = part_encoded if encoded.empty else encoded.add(part_encoded)
+                    rec_count = rec_count + len(chunk)
+        else:
+                # all cats in memory
+            encoded = cudf.Series(
+                nvcategory.from_strings(y.data).set_keys(self._cats.data).values()
+            )
         return encoded.replace(-1, unk_idx)
 
-    def fit_transform(self, y: cudf.Series) -> cudf.Series:
-        """
-        Simultaneously fit and transform an input
-        This is functionally equivalent to (but faster than)
-        `LabelEncoder().fit(y).transform(y)`
-        """
-        self._dtype = y.dtype
 
-        # Convert y to nvstrings series, if it isn't one
+    def series_size(self, s):
+        if hasattr(s, 'str'):
+            return s.str.device_memory()
+        else:
+            return s.dtype.itemsize * len(s)
+    
+
+    def fit(self, y: cudf.Series):
         y = _enforce_str(y)
+        if self._cats.empty:
+            self._cats = self.one_cycle(y).unique()
+            return
+        self._cats = self._cats.append(self.one_cycle(y)).unique()
+        # check if enough space to leave in gpu memory if category doubles in size
+        if self.series_size(self._cats) > (numba.cuda.current_context().get_memory_info()[0] * .001):
+            # first time dumping into file
+            if not os.path.exists(self.col):
+                os.makedirs(self.col)
+            self.dump_cats()
+    
+    def merge_series(self, compr_a, compr_b):
+        df = cudf.DataFrame()
+        df['l1'] = compr_a.nans_to_nulls().dropna()
+        dg = cudf.DataFrame()
+        dg['l2'] = compr_b.nans_to_nulls().dropna()
+        mask = dg['l2'].isin(df['l1'])
+        unis = dg.loc[~mask]['l2'].unique()
+        return unis
 
-        # Bottleneck is here, despite everything being done on the device
-        self._cats = nvcategory.from_strings(y.data)
 
-        self._fitted = True
-        arr: rmm.device_array = rmm.device_array(y.data.size(), dtype=np.int32)
-        self._cats.values(devptr=arr.device_ctypes_pointer.value)
-        return cudf.Series(arr)
+    def dump_cats(self):
+        x = cudf.DataFrame()
+        x[self.col] = self._cats.unique()
+        x.to_parquet(self.col)
+        self._cats = cudf.Series()
+    
 
-    def inverse_transform(self, y: cudf.Series) -> cudf.Series:
-        """ Revert ordinal label to original label
-        Parameters
-        ----------
-        y : cudf.Series, dtype=int32
-            Ordinal labels to be reverted
-        Returns
-        -------
-        reverted : cudf.Series
-            Reverted labels
-        """
-        # check LabelEncoder is fitted
-        self._check_is_fitted()
-        # check input type is cudf.Series
-        if not isinstance(y, cudf.Series):
-            raise TypeError("Input of type {} is not cudf.Series".format(type(y)))
-
-        # check if y's dtype is np.int32, otherwise convert it
-        y = _enforce_npint32(y)
-
-        # check if ord_label out of bound
-        ord_label = y.unique()
-        category_num = len(self._cats.keys())
-        for ordi in ord_label:
-            if ordi < 0 or ordi >= category_num:
-                raise ValueError("y contains previously unseen label {}".format(ordi))
-        # convert ordinal label to string label
-        reverted = cudf.Series(
-            self._cats.gather_strings(y.data.mem.device_ctypes_pointer.value, len(y))
-        )
-
-        return reverted
-
-    def update_fit(self, y: cudf.Series):
-        y = _enforce_str(y)
-        self._cats = self._cats.add_strings(y.unique().data)
-        self._cats = nvcategory.from_strings(self._cats.keys())
+    def one_cycle(self, compr):
+        # compr is already a list of unique values to check against
+        if os.path.exists(self.col):
+            file_paths = [f"{self.col}/{x}" for x in os.listdir(self.col) if x.endswith('parquet')]
+            if file_paths:
+                chunks = ds_itr.GPUDatasetIterator(file_paths)
+                for chunk in chunks:
+                    compr = self.merge_series( chunk[self.col], compr)
+                    if len(compr) == 0:
+                        break
+        return compr
+                    
