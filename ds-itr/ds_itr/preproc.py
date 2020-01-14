@@ -33,6 +33,9 @@ class Preprocessor:
         self.cat_names = cat_names or []
         self.cont_names = cont_names or []
         self.label_name = label_name or []
+        self.new_cat_names = self.cat_names.copy()
+        self.new_cont_names = self.cont_names.copy()
+        self.new_label_name = self.label_name.copy()
         self.feat_ops = {}
         self.stat_ops = {}
         self.df_ops = {}
@@ -40,6 +43,8 @@ class Preprocessor:
         self.to_cpu = to_cpu
         if feat_ops:
             self.reg_feat_ops(feat_ops)
+        if stat_ops:
+            self.reg_stat_ops(stat_ops)
         if df_ops:
             self.reg_df_ops(df_ops)
         else:
@@ -47,6 +52,15 @@ class Preprocessor:
 
         self.clear_stats()
 
+    
+    def update_columns(self, gdf: cudf.DataFrame):
+        new_all_cols = [self.new_cont_names, self.new_cat_names, self.new_label_name]
+        for idx, col in enumerate(gdf.columns):
+            for grp in new_all_cols:
+                if col.split('_')[0] in grp and col not in grp:
+                    grp.append(col)
+                
+        
     def reg_feat_ops(self, feat_ops):
         for feat_op in feat_ops:
             self.feat_ops[feat_op._id] = feat_op
@@ -134,7 +148,8 @@ class Preprocessor:
         """
         for gdf in itr:
             for name, feat_op in self.feat_ops.items():
-                gdf = feat_op.apply_op(gdf, self.cont_names, self.cat_names, self.label_name)
+                feat_op.apply_op(gdf, self.cont_names, self.cat_names, self.label_name)
+#                 self.update_columns(gdf)
             for name, stat_op in self.stat_ops.items():
                 stat_op.read_itr(gdf, self.cont_names, self.cat_names, self.label_name)
         for name, stat_op in self.stat_ops.items():
@@ -150,24 +165,22 @@ class Preprocessor:
                     self.stats[name] = stat
                 else:
                     warnings.warn("stat not found,", name)
+        print(self.stats)
 
     def save_stats(self, path):
-
-        host_categories = {}
-        for col, cat in self.stats["categories"].items():
-            host_categories[col] = cat.to_host()
-
-        self.stats["host_categories"] = host_categories
-
+        stats_drop = {}
+        stats_drop["encoders"] = {}
+        for name, enc in self.stats["encoders"].items():
+            stats_drop["encoders"][name] = (enc.folder_path, enc._cats.values_to_string())
+        for name, stat in self.stats.items():
+            if name not in stats_drop.keys():
+                stats_drop[name] = stat
         with open(path, "w") as outfile:
-            yaml.dump(self.stats, outfile, default_flow_style=False)
+            yaml.dump(stats_drop, outfile, default_flow_style=False)
 
     def load_stats(self, path):
         def _set_stats(self, stats_dict):
             for key, stat in stats_dict.items():
-                if key == "host_categories":
-                    self.encoders_from_host_cats(stat)
-                else:
                     self.stats[key] = stat
 
         if isinstance(path, dict):
@@ -175,12 +188,15 @@ class Preprocessor:
         else:
             with open(path, "r") as infile:
                 _set_stats(self, yaml.load(infile))
+        for col, cats in self.stats["encoders"].items():
+            self.stats["encoders"][col] = DLLabelEncoder(col, path=cats[0], cats=cudf.Series(cats[1]))
 
     def apply_ops(self, gdf):
         for name, op in self.df_ops.items():
             gdf = op.apply_op(
                 gdf, self.stats, self.cont_names, self.cat_names, self.label_name
             )
+            self.update_columns(gdf)
         return gdf
 
     def clear_stats(self):
@@ -190,15 +206,6 @@ class Preprocessor:
 
         for statop_id, stat_op in self.stat_ops.items():
             stat_op.clear()
-
-    def encoders_from_host_cats(self, host_categories):
-        """ Update encoders/categories using host_categories.
-        """
-        for name, cats in host_categories.items():
-            self.stats["encoders"][name] = DLLabelEncoder()
-            self.stats["encoders"][name].fit(cudf.Series(cats))
-            self.stats["categories"][name] = self.stats["encoders"][name]._cats.keys()
-        return
 
     def ds_to_tensors(self, itr, apply_ops=True):
         import torch

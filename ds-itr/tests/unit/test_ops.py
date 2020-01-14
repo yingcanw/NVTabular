@@ -165,11 +165,11 @@ def test_encoder(tmpdir, datasets, gpu_memory_frac, engine):
     
     # Check that categories match
     if engine == "parquet":
-        cats_expected0 = df["name-cat"].unique().tolist().sort()
-        cats0 = processor.stats["encoders"]["name-cat"]._cats.keys().to_host().sort()
+        cats_expected0 = df["name-cat"].unique().values_to_string()
+        cats0 = processor.stats["encoders"]["name-cat"]._cats.values_to_string()
         assert cats0 == cats_expected0
-    cats_expected1 = df["name-string"].unique().tolist().sort()
-    cats1 = processor.stats["encoders"]["name-string"]._cats.keys().to_host().sort()
+    cats_expected1 = df["name-string"].unique().values_to_string()
+    cats1 = processor.stats["encoders"]["name-string"]._cats.values_to_string()
     assert cats1 == cats_expected1
 
 

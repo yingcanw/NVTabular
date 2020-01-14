@@ -215,8 +215,6 @@ class Median(StatOperator):
     ):
         """ Iteration-level median algorithm.
         """
-        # TODO: Use more-accurate approach.
-        gdf = gdf[cont_names]
         for name in cont_names:
             if name not in self.batch_medians:
                 self.batch_medians[name] = []
@@ -238,6 +236,7 @@ class Median(StatOperator):
             self.medians[col] = float(
                 self.batch_medians[col][len(self.batch_medians[col]) // 2]
             )
+        print(self.medians)
         return
 
     def registered_stats(self):
@@ -271,8 +270,6 @@ class Encoder(StatOperator):
                 self.encoders[name] = DLLabelEncoder(name)
                 gdf[name].append([None])
             self.encoders[name].fit(gdf[name])
-#             if self.count % 100 == 0:
-#                 print(name, self.encoders[name]._cats.shape)
         return
 
     def read_fin(self, *args):
@@ -295,7 +292,8 @@ class Encoder(StatOperator):
         return ["encoders", "categories"]
 
     def stats_collected(self):
-        result = [("encoders", self.encoders), ("categories", self.categories)]
+        result = [("encoders", self.encoders),
+                  ("categories", self.categories)]
         return result    
 
     def clear(self):
@@ -321,7 +319,7 @@ class Export(FeatEngOperator):
         writer = DatasetWriter(self.path, nfiles=self.nfiles)
         writer.write(gdf, shuffle=self.shuffle)
         writer.write_metadata()
-        return 
+        return gdf, cont_names, cat_names, label_name
 
 class ZeroFill(FeatEngOperator):
     def apply_op(
@@ -334,9 +332,9 @@ class ZeroFill(FeatEngOperator):
         if not cont_names:
             return gdf
         z_gdf = gdf[cont_names].fillna(0)
-        z_gdf[z_gdf < 0] = 0
-        return cudf.concat([gdf[label_name], gdf[cat_names], z_gdf], axis=1)
-    
+        z_gdf[z_gdf < 0] = 0 
+        gdf = cudf.concat([gdf[label_name], gdf[cat_names], z_gdf], axis=1)
+        return gdf
     
     
 class LogOp(FeatEngOperator):
@@ -351,7 +349,9 @@ class LogOp(FeatEngOperator):
         if not cont_names:
             return gdf
         new_gdf = np.log(gdf[cont_names].astype(np.float32) + 1)
-        return cudf.concat([gdf[label_name], gdf[cat_names], new_gdf], axis=1)
+        new_gdf.columns = [f"{name}_log" for name in new_gdf.columns]
+        gdf = cudf.concat([gdf, new_gdf], axis=1)
+        return gdf
 
     
 class Normalize(DFOperator):
@@ -372,15 +372,19 @@ class Normalize(DFOperator):
     ):
         if not cont_names or not stats_context["stds"]:
             return gdf
-        return self.apply_mean_std(gdf, stats_context, cont_names)
+        gdf = self.apply_mean_std(gdf, stats_context, cont_names)
+        return gdf
 
     def apply_mean_std(self, gdf, stats_context, cont_names):
+        new_conts = []
         for name in cont_names:
             if stats_context["stds"][name] > 0:
-                gdf[name] = (gdf[name] - stats_context["means"][name]) / (
+                new_col = f"{name}_{self._id}"
+                gdf[new_col] = (gdf[name] - stats_context["means"][name]) / (
                     stats_context["stds"][name]
                 )
-            gdf[name] = gdf[name].astype("float32")
+                new_conts.append(new_col) 
+            gdf[new_col] = gdf[new_col].astype("float32")
         return gdf
 
 
@@ -407,10 +411,11 @@ class FillMissing(DFOperator):
         label_name: list,
     ):
         if not cont_names or not stats_context["medians"]:
-            return gdf
-        return self.apply_filler(gdf, stats_context, cat_names, cont_names)
+            return gdf, cont_names, cat_names, label_name
+        gdf = self.apply_filler(gdf, stats_context, cont_names)
+        return gdf
 
-    def apply_filler(self, gdf, stats_context, cat_names, cont_names):
+    def apply_filler(self, gdf, stats_context, cont_names):
         na_names = [name for name in cont_names if gdf[name].isna().sum()]
         if self.add_col:
             gdf = self.add_na_indicators(gdf, na_names, cont_names)
@@ -448,8 +453,6 @@ class Categorify(DFOperator):
     ):
         if not cat_names:
             return gdf
-        self.cat_names.extend(cat_names)
-        self.cat_names = list(set(self.cat_names))
         cat_names = [name for name in cat_names if name in gdf.columns]
         for name in cat_names:
             gdf[name] = stats_context["encoders"][name].transform(gdf[name])
