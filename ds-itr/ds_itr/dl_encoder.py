@@ -66,9 +66,6 @@ class DLLabelEncoder(object):
                 #chunks represents a UNIQUE set of categorical representations
                 for chunk in chunks:
                     #must reconstruct encoded series from multiple parts 
-#                     part_encoded = cudf.Series(
-#                         nvcategory.from_strings(y.data).set_keys(chunk[self.col].data).values()
-#                     )
                     part_encoded = cudf.Series(y.label_encoding(chunk[self.col].values_to_string()))
                     # zero out unknowns
 #                     part_encoded.fillna(0, inplace=True)
@@ -78,10 +75,7 @@ class DLLabelEncoder(object):
                     encoded = part_encoded if encoded.empty else encoded.add(part_encoded)
                     rec_count = rec_count + len(chunk)
         else:
-                # all cats in memory
-#             encoded = cudf.Series(
-#                 nvcategory.from_strings(y.data).set_keys(self._cats.data).values()
-#             )
+            # all cats in memory
             encoded = cudf.Series(y.label_encoding(self._cats.values_to_string()))
         encoded = encoded.fillna(0)
         # slicing to fix https://github.com/rapidsai/cudf/issues/3785
