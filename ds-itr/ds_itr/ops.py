@@ -13,13 +13,10 @@ class Operator:
     def describe(self):
         raise NotImplementedError("All operators must have a desription.")
 
+
 class FeatEngOperator(Operator):
     def apply_op(
-        self,
-        gdf: cudf.DataFrame,
-        cont_names: list,
-        cat_names: list,
-        label_name: list,
+        self, gdf: cudf.DataFrame, cont_names: list, cat_names: list, label_name: list,
     ):
         raise NotImplementedError(
             """The operation to be applied on the data frame chunk, given the required statistics.
@@ -28,7 +25,6 @@ class FeatEngOperator(Operator):
 
 
 class DFOperator(Operator):
-
     def apply_op(
         self,
         gdf: cudf.DataFrame,
@@ -41,8 +37,7 @@ class DFOperator(Operator):
             """The operation to be applied on the data frame chunk, given the required statistics.
                 """
         )
-    
-    
+
     def required_stats(self):
         raise NotImplementedError(
             "Should consist of a list of identifiers, that should map to available statistics"
@@ -86,7 +81,7 @@ class MinMax(StatOperator):
     batch_maxs = {}
     mins = {}
     maxs = {}
-    
+
     def read_itr(
         self, gdf: cudf.DataFrame, cont_names: [], cat_names: [], label_name: []
     ):
@@ -101,11 +96,11 @@ class MinMax(StatOperator):
             self.batch_mins[col].append(col_min)
             self.batch_maxs[col].append(col_max)
         return
-    
+
     def read_fin(self):
-        
+
         for col in self.batch_mins.keys():
-            # required for exporting values later, 
+            # required for exporting values later,
             # must move values from gpu if cupy->numpy not supported
             self.batch_mins[col] = cudf.Series(self.batch_mins[col]).tolist()
             self.batch_maxs[col] = cudf.Series(self.batch_maxs[col]).tolist()
@@ -115,24 +110,23 @@ class MinMax(StatOperator):
 
     def registered_stats(self):
         return ["mins", "maxs", "batch_mins", "batch_maxs"]
-        
-        
+
     def stats_collected(self):
         result = [
             ("mins", self.mins),
             ("maxs", self.maxs),
             ("batch_mins", self.batch_mins),
-            ("batch_maxs", self.batch_maxs)
+            ("batch_maxs", self.batch_maxs),
         ]
         return result
-    
+
     def clear(self):
         self.batch_mins = {}
         self.batch_maxs = {}
         self.mins = {}
         self.maxs = {}
         return
-        
+
 
 class Moments(StatOperator):
     counts = {}
@@ -191,7 +185,7 @@ class Moments(StatOperator):
             ("means", self.means),
             ("stds", self.stds),
             ("vars", self.varis),
-            ("counts", self.counts)
+            ("counts", self.counts),
         ]
         return result
 
@@ -277,74 +271,67 @@ class Encoder(StatOperator):
         """
         for name, val in self.encoders.items():
             self.categories[name] = self.cat_read_all_files(val)
-        return 
-    
+        return
+
     def cat_read_all_files(self, cat_obj):
         cat_size = cat_obj._cats.shape[0]
-        file_paths = [f"{cat_obj.col}/{x}" for x in os.listdir(cat_obj.col) if x.endswith('parquet')] if os.path.exists(cat_obj.col) else []
+        file_paths = (
+            [
+                f"{cat_obj.col}/{x}"
+                for x in os.listdir(cat_obj.col)
+                if x.endswith("parquet")
+            ]
+            if os.path.exists(cat_obj.col)
+            else []
+        )
         for fi in file_paths:
             chunk = cudf.read_parquet(fi)
             cat_size = cat_size + chunk.shape[0]
         return cat_size
-        
 
     def registered_stats(self):
         return ["encoders", "categories"]
 
     def stats_collected(self):
-        result = [("encoders", self.encoders),
-                  ("categories", self.categories)]
-        return result    
+        result = [("encoders", self.encoders), ("categories", self.categories)]
+        return result
 
     def clear(self):
         self.encoders = {}
         self.categories = {}
-        return    
+        return
 
-    
+
 class Export(FeatEngOperator):
-    
     def __init__(self, path, nfiles=1, shuffle=True, **kwargs):
         self.path = path
         self.nfiles = nfiles
         self.shuffle = True
-    
+
     def apply_op(
-        self,
-        gdf: cudf.DataFrame,
-        cont_names: list,
-        cat_names: list,
-        label_name: list,
+        self, gdf: cudf.DataFrame, cont_names: list, cat_names: list, label_name: list,
     ):
         writer = DatasetWriter(self.path, nfiles=self.nfiles)
         writer.write(gdf, shuffle=self.shuffle)
         writer.write_metadata()
         return gdf
 
+
 class ZeroFill(FeatEngOperator):
     def apply_op(
-        self,
-        gdf: cudf.DataFrame,
-        cont_names: list,
-        cat_names: list,
-        label_name: list,
+        self, gdf: cudf.DataFrame, cont_names: list, cat_names: list, label_name: list,
     ):
         if not cont_names:
             return gdf
         z_gdf = gdf[cont_names].fillna(0)
-        z_gdf[z_gdf < 0] = 0 
+        z_gdf[z_gdf < 0] = 0
         gdf = cudf.concat([gdf[label_name], gdf[cat_names], z_gdf], axis=1)
         return gdf
-    
-    
+
+
 class LogOp(FeatEngOperator):
-    
     def apply_op(
-        self,
-        gdf: cudf.DataFrame,
-        cont_names: list,
-        cat_names: list,
-        label_name: list,
+        self, gdf: cudf.DataFrame, cont_names: list, cat_names: list, label_name: list,
     ):
         if not cont_names:
             return gdf
@@ -352,7 +339,7 @@ class LogOp(FeatEngOperator):
         gdf = cudf.concat([gdf[cat_names], gdf[label_name], new_gdf], axis=1)
         return gdf
 
-    
+
 class Normalize(DFOperator):
     """ Normalize the continuous variables.
     """

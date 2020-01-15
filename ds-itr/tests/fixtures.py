@@ -79,10 +79,9 @@ def datasets(tmpdir_factory):
     for col in df.columns:
         if col in ["name-cat", "label"]:
             break
-        df[col].iloc[random.randint(1, imax-1)] = None
-        df[col].iloc[random.randint(1, imax-1)] = None
+        df[col].iloc[random.randint(1, imax - 1)] = None
+        df[col].iloc[random.randint(1, imax - 1)] = None
 
-        
     datadir = tmpdir_factory.mktemp("data")
     datadir = {
         "parquet": tmpdir_factory.mktemp("parquet"),

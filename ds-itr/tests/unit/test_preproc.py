@@ -56,7 +56,10 @@ sample_stats = {
     "vars": {"id": 993.65, "x": 0.338, "y": 0.335},
     "stds": {"id": 31.52, "x": 0.581, "y": 0.578},
     "counts": {"id": 4321.0, "x": 4321.0, "y": 4321.0},
-    "encoders": {"name-cat": ("name-cat",mynames), "name-string": ("name-string",mynames)},
+    "encoders": {
+        "name-cat": ("name-cat", mynames),
+        "name-string": ("name-string", mynames),
+    },
 }
 
 
@@ -274,11 +277,11 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     if engine == "parquet":
         cats_expected0 = df["name-cat"].unique().values_to_string()
         cats0 = processor.stats["encoders"]["name-cat"]._cats.values_to_string()
-        #adding the None entry as a string because of move from gpu
+        # adding the None entry as a string because of move from gpu
         assert cats0 == ["None"] + cats_expected0
     cats_expected1 = df["name-string"].unique().values_to_string()
     cats1 = processor.stats["encoders"]["name-string"]._cats.values_to_string()
-    #adding the None entry as a string because of move from gpu
+    # adding the None entry as a string because of move from gpu
     assert cats1 == ["None"] + cats_expected1
 
     # Write to new "shuffled" and "processed" dataset

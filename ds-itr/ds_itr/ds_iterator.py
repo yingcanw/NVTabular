@@ -170,7 +170,6 @@ class CSVFileReader(GPUFileReader):
     def intialize_reader(self, gpu_memory_frac, batch_size, **kwargs):
         self.reader = cudf.read_csv
         self.file = open(self.file_path, "r")
-        
 
         # Count rows and determine column names
         self.columns = []
@@ -193,26 +192,22 @@ class CSVFileReader(GPUFileReader):
         self.names = []
         dtype_inf = {}
         snippet = self.reader(
-                    self.file,
-                    nrows=min(10, self.num_rows),
-                    names=names,
-                    header=False,
-                    dtype=dtype,
-                    sep=sep
-                )
+            self.file,
+            nrows=min(10, self.num_rows),
+            names=names,
+            header=False,
+            dtype=dtype,
+            sep=sep,
+        )
         if self.num_rows > 0:
-            for i, col in enumerate(
-                snippet.columns
-            ): 
+            for i, col in enumerate(snippet.columns):
                 if names:
                     name = names[i]
                 else:
                     print(col)
                     name = col
                 self.names.append(name)
-            for i, col in enumerate(
-                snippet._columns
-            ):
+            for i, col in enumerate(snippet._columns):
                 if estimate_row_size:
                     if col.dtype == "object":
                         # Use maximum of first 10 rows
@@ -233,9 +228,14 @@ class CSVFileReader(GPUFileReader):
     def read_file_batch(self, nskip=0, columns=None, **kwargs):
         batch = min(self.batch_size, self.num_rows - nskip)
         chunk = self.reader(
-            self.file_path, nrows=batch, skiprows=nskip, names=self.names, header=False, sep=self.sep
+            self.file_path,
+            nrows=batch,
+            skiprows=nskip,
+            names=self.names,
+            header=False,
+            sep=self.sep,
         )
-        
+
         if columns:
             for col in columns:
                 chunk[col] = chunk[col].astype(self.dtype[col])
@@ -297,15 +297,15 @@ class GPUFileIterator:
                 self.cur_chunk = None
                 return chunk
             raise StopIteration
-#         if not self.cur_chunk:
+        #         if not self.cur_chunk:
         self._load_chunk()
         chunk = self.cur_chunk
         self.cur_chunk = None
-#         threading.Thread(target=self._load_chunk).start()
+        #         threading.Thread(target=self._load_chunk).start()
         return chunk
 
     def _load_chunk(self):
-        # retrieve missing final chunk from fileset, 
+        # retrieve missing final chunk from fileset,
         # will fail on last try before stop iteration in __next__
         if self.rows_processed < self.file_size and not self.cur_chunk:
             self.cur_chunk = self.engine.read_file_batch(
@@ -313,7 +313,8 @@ class GPUFileIterator:
             )
             self.count = self.count + 1
             self.rows_processed += self.cur_chunk.shape[0]
-    
+
+
 #
 # GPUDatasetIterator (Iterates through multiple files)
 #
@@ -333,7 +334,6 @@ class GPUDatasetIterator:
         self.itr = None
         self.next_itr = None
         self.next_path_ind = 0
-
 
     def __iter__(self):
         self.itr = None
@@ -355,14 +355,14 @@ class GPUDatasetIterator:
                 path = self.paths[self.next_path_ind]
                 self.next_path_ind += 1
                 self.itr = GPUFileIterator(path, **self.kwargs)
-        
-        
+
+
 #     def __iter__(self):
 #         self.itr = None
 #         self.next_path_ind = 0
 #         self.__load_next()
 #         return self
-    
+
 #     def __load_next(self):
 #         if self.next_path_ind <= self.num_paths:
 #             print('swaping and loading new chunk')
@@ -372,7 +372,7 @@ class GPUDatasetIterator:
 #             self.next_itr = GPUFileIterator(self.paths[self.next_path_ind], **self.kwargs)
 #             self.next_path_ind += 1
 
-    
+
 #     def __next__(self):
 #         print('hit next')
 #         if not self.itr:
@@ -386,5 +386,3 @@ class GPUDatasetIterator:
 #                 if self.next_path_ind >= self.num_paths:
 #                     raise StopIteration
 #                 threading.Thread(target=self.__load_next).start()
-                
-
