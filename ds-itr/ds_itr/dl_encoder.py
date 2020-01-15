@@ -1,14 +1,10 @@
 import numpy as np
-import nvstrings
-import nvcategory
-import warnings
 import cudf
 import rmm
 import numba
 import ds_itr.ds_iterator as ds_itr
 import ds_itr.ds_writer as ds_wtr
 import os
-import pyarrow.parquet as pq
 
 
 def _enforce_str(y: cudf.Series) -> cudf.Series:
@@ -73,7 +69,6 @@ class DLLabelEncoder(object):
                         y.label_encoding(chunk[self.col].values_to_string())
                     )
                     # zero out unknowns
-                    #                     part_encoded.fillna(0, inplace=True)
                     part_encoded.replace(-1, 0)
                     part_encoded[part_encoded > 0].add(rec_count)
                     # continually add chunks to encoded to get full batch

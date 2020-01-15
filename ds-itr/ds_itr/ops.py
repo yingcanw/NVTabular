@@ -230,7 +230,6 @@ class Median(StatOperator):
             self.medians[col] = float(
                 self.batch_medians[col][len(self.batch_medians[col]) // 2]
             )
-        print(self.medians)
         return
 
     def registered_stats(self):
@@ -249,14 +248,12 @@ class Median(StatOperator):
 class Encoder(StatOperator):
     encoders = {}
     categories = {}
-    count = 0
 
     def read_itr(
         self, gdf: cudf.DataFrame, cont_names: [], cat_names: [], label_name: []
     ):
         """ Iteration-level categorical encoder update.
         """
-        self.count = self.count + 1
         if not cat_names:
             return
         for name in cat_names:
@@ -362,7 +359,6 @@ class Normalize(DFOperator):
         return gdf
 
     def apply_mean_std(self, gdf, stats_context, cont_names):
-        new_conts = []
         for name in cont_names:
             if stats_context["stds"][name] > 0:
                 gdf[name] = (gdf[name] - stats_context["means"][name]) / (

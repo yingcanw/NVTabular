@@ -150,7 +150,6 @@ class Preprocessor:
                     self.stats[name] = stat
                 else:
                     warnings.warn("stat not found,", name)
-        print(self.stats)
 
     def save_stats(self, path):
         stats_drop = {}

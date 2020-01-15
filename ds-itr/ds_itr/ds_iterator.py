@@ -1,11 +1,6 @@
-import warnings
-
 import cudf
-
 import sys
 import numba
-import threading
-
 
 #
 # Helper Function definitions
@@ -204,7 +199,6 @@ class CSVFileReader(GPUFileReader):
                 if names:
                     name = names[i]
                 else:
-                    print(col)
                     name = col
                 self.names.append(name)
             for i, col in enumerate(snippet._columns):
@@ -297,11 +291,9 @@ class GPUFileIterator:
                 self.cur_chunk = None
                 return chunk
             raise StopIteration
-        #         if not self.cur_chunk:
         self._load_chunk()
         chunk = self.cur_chunk
         self.cur_chunk = None
-        #         threading.Thread(target=self._load_chunk).start()
         return chunk
 
     def _load_chunk(self):
@@ -332,7 +324,6 @@ class GPUDatasetIterator:
         self.num_paths = len(paths)
         self.kwargs = kwargs
         self.itr = None
-        self.next_itr = None
         self.next_path_ind = 0
 
     def __iter__(self):
@@ -355,34 +346,3 @@ class GPUDatasetIterator:
                 path = self.paths[self.next_path_ind]
                 self.next_path_ind += 1
                 self.itr = GPUFileIterator(path, **self.kwargs)
-
-
-#     def __iter__(self):
-#         self.itr = None
-#         self.next_path_ind = 0
-#         self.__load_next()
-#         return self
-
-#     def __load_next(self):
-#         if self.next_path_ind <= self.num_paths:
-#             print('swaping and loading new chunk')
-#             # swap to new current
-#             self.itr = self.next_itr
-#             # load up the new next
-#             self.next_itr = GPUFileIterator(self.paths[self.next_path_ind], **self.kwargs)
-#             self.next_path_ind += 1
-
-
-#     def __next__(self):
-#         print('hit next')
-#         if not self.itr:
-#             self.__load_next()
-#         while True:
-#             try:
-#                 print('loading next')
-#                 return self.itr.__next__()
-#             except StopIteration:
-#                 print('stop iteration called')
-#                 if self.next_path_ind >= self.num_paths:
-#                     raise StopIteration
-#                 threading.Thread(target=self.__load_next).start()

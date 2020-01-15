@@ -6,6 +6,7 @@ import cudf
 import numpy as np
 from cudf.tests.utils import assert_eq
 import pytest
+from tests.fixtures import *
 
 import glob
 import time
@@ -14,53 +15,53 @@ import random
 import os
 
 
-allcols_csv = ["timestamp", "id", "label", "name-string", "x", "y", "z"]
-mycols_csv = ["name-string", "id", "label", "x", "y"]
-mycols_pq = ["name-cat", "name-string", "id", "label", "x", "y"]
-mynames = [
-    "Alice",
-    "Bob",
-    "Charlie",
-    "Dan",
-    "Edith",
-    "Frank",
-    "George",
-    None,
-    "Ingrid",
-    "Jerry",
-    "Kevin",
-    "Laura",
-    "Michael",
-    "Norbert",
-    "Oliver",
-    "Patricia",
-    "Quinn",
-    "Ray",
-    "Sarah",
-    "Ursula",
-    "Victor",
-    "Wendy",
-    "Xavier",
-    "Yvonne",
-    "Zelda",
-]
+# allcols_csv = ["timestamp", "id", "label", "name-string", "x", "y", "z"]
+# mycols_csv = ["name-string", "id", "label", "x", "y"]
+# mycols_pq = ["name-cat", "name-string", "id", "label", "x", "y"]
+# mynames = [
+#     "Alice",
+#     "Bob",
+#     "Charlie",
+#     "Dan",
+#     "Edith",
+#     "Frank",
+#     "George",
+#     None,
+#     "Ingrid",
+#     "Jerry",
+#     "Kevin",
+#     "Laura",
+#     "Michael",
+#     "Norbert",
+#     "Oliver",
+#     "Patricia",
+#     "Quinn",
+#     "Ray",
+#     "Sarah",
+#     "Ursula",
+#     "Victor",
+#     "Wendy",
+#     "Xavier",
+#     "Yvonne",
+#     "Zelda",
+# ]
 
-sample_stats = {
-    "batch_medians": {
-        "id": [999.0, 1000.0],
-        "x": [-0.051, -0.001],
-        "y": [-0.009, -0.001],
-    },
-    "medians": {"id": 1000.0, "x": -0.001, "y": -0.001},
-    "means": {"id": 1000.0, "x": -0.008, "y": -0.001},
-    "vars": {"id": 993.65, "x": 0.338, "y": 0.335},
-    "stds": {"id": 31.52, "x": 0.581, "y": 0.578},
-    "counts": {"id": 4321.0, "x": 4321.0, "y": 4321.0},
-    "encoders": {
-        "name-cat": ("name-cat", mynames),
-        "name-string": ("name-string", mynames),
-    },
-}
+# sample_stats = {
+#     "batch_medians": {
+#         "id": [999.0, 1000.0],
+#         "x": [-0.051, -0.001],
+#         "y": [-0.009, -0.001],
+#     },
+#     "medians": {"id": 1000.0, "x": -0.001, "y": -0.001},
+#     "means": {"id": 1000.0, "x": -0.008, "y": -0.001},
+#     "vars": {"id": 993.65, "x": 0.338, "y": 0.335},
+#     "stds": {"id": 31.52, "x": 0.581, "y": 0.578},
+#     "counts": {"id": 4321.0, "x": 4321.0, "y": 4321.0},
+#     "encoders": {
+#         "name-cat": ("name-cat", mynames),
+#         "name-string": ("name-string", mynames),
+#     },
+# }
 
 
 @pytest.fixture(scope="session")

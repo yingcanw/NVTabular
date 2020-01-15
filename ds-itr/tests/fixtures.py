@@ -52,7 +52,10 @@ sample_stats = {
     "vars": {"id": 993.65, "x": 0.338, "y": 0.335},
     "stds": {"id": 31.52, "x": 0.581, "y": 0.578},
     "counts": {"id": 4321.0, "x": 4321.0, "y": 4321.0},
-    "host_categories": {"name-cat": mynames, "name-string": mynames},
+    "encoders": {
+        "name-cat": ("name-cat", mynames),
+        "name-string": ("name-string", mynames),
+    },
 }
 
 
