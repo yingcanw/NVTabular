@@ -33,9 +33,6 @@ class Preprocessor:
         self.cat_names = cat_names or []
         self.cont_names = cont_names or []
         self.label_name = label_name or []
-        self.new_cat_names = self.cat_names.copy()
-        self.new_cont_names = self.cont_names.copy()
-        self.new_label_name = self.label_name.copy()
         self.feat_ops = {}
         self.stat_ops = {}
         self.df_ops = {}
@@ -51,14 +48,6 @@ class Preprocessor:
             warnings.warn("No DataFrame Operators were loaded")
 
         self.clear_stats()
-
-    
-    def update_columns(self, gdf: cudf.DataFrame):
-        new_all_cols = [self.new_cont_names, self.new_cat_names, self.new_label_name]
-        for idx, col in enumerate(gdf.columns):
-            for grp in new_all_cols:
-                if col.split('_')[0] in grp and col not in grp:
-                    grp.append(col)
                 
         
     def reg_feat_ops(self, feat_ops):
@@ -135,7 +124,9 @@ class Preprocessor:
 
         # Apply Operations (if desired)
         if apply_ops:
-            gddf = gddf.map_partitions(self.apply_ops)
+            gddf = gddf.map_partitions(
+                self.apply_ops, meta=self.apply_ops(gddf.head())
+            )
 
         # Write each partition to an output parquet file
         # (row groups correspond to `chunk_size`)
@@ -149,7 +140,6 @@ class Preprocessor:
         for gdf in itr:
             for name, feat_op in self.feat_ops.items():
                 feat_op.apply_op(gdf, self.cont_names, self.cat_names, self.label_name)
-#                 self.update_columns(gdf)
             for name, stat_op in self.stat_ops.items():
                 stat_op.read_itr(gdf, self.cont_names, self.cat_names, self.label_name)
         for name, stat_op in self.stat_ops.items():
@@ -170,7 +160,8 @@ class Preprocessor:
     def save_stats(self, path):
         stats_drop = {}
         stats_drop["encoders"] = {}
-        for name, enc in self.stats["encoders"].items():
+        encoders = self.stats.get("encoders", {})
+        for name, enc in encoders.items():
             stats_drop["encoders"][name] = (enc.folder_path, enc._cats.values_to_string())
         for name, stat in self.stats.items():
             if name not in stats_drop.keys():
@@ -188,7 +179,8 @@ class Preprocessor:
         else:
             with open(path, "r") as infile:
                 _set_stats(self, yaml.load(infile))
-        for col, cats in self.stats["encoders"].items():
+        encoders = self.stats.get("encoders", {})
+        for col, cats in encoders.items():
             self.stats["encoders"][col] = DLLabelEncoder(col, path=cats[0], cats=cudf.Series(cats[1]))
 
     def apply_ops(self, gdf):
@@ -196,7 +188,6 @@ class Preprocessor:
             gdf = op.apply_op(
                 gdf, self.stats, self.cont_names, self.cat_names, self.label_name
             )
-            self.update_columns(gdf)
         return gdf
 
     def clear_stats(self):

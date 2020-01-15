@@ -319,7 +319,7 @@ class Export(FeatEngOperator):
         writer = DatasetWriter(self.path, nfiles=self.nfiles)
         writer.write(gdf, shuffle=self.shuffle)
         writer.write_metadata()
-        return gdf, cont_names, cat_names, label_name
+        return gdf
 
 class ZeroFill(FeatEngOperator):
     def apply_op(
@@ -349,8 +349,7 @@ class LogOp(FeatEngOperator):
         if not cont_names:
             return gdf
         new_gdf = np.log(gdf[cont_names].astype(np.float32) + 1)
-        new_gdf.columns = [f"{name}_log" for name in new_gdf.columns]
-        gdf = cudf.concat([gdf, new_gdf], axis=1)
+        gdf = cudf.concat([gdf[cat_names], gdf[label_name], new_gdf], axis=1)
         return gdf
 
     
@@ -379,12 +378,10 @@ class Normalize(DFOperator):
         new_conts = []
         for name in cont_names:
             if stats_context["stds"][name] > 0:
-                new_col = f"{name}_{self._id}"
-                gdf[new_col] = (gdf[name] - stats_context["means"][name]) / (
+                gdf[name] = (gdf[name] - stats_context["means"][name]) / (
                     stats_context["stds"][name]
                 )
-                new_conts.append(new_col) 
-            gdf[new_col] = gdf[new_col].astype("float32")
+            gdf[name] = gdf[name].astype("float32")
         return gdf
 
 
