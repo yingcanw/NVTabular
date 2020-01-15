@@ -29,18 +29,21 @@ class Preprocessor:
         stat_ops=None,
         df_ops=None,
         to_cpu=True,
+        config=None
     ):
         self.cat_names = cat_names or []
         self.cont_names = cont_names or []
         self.label_name = label_name or []
-        self.new_cat_names = self.cat_names.copy()
-        self.new_cont_names = self.cont_names.copy()
-        self.new_label_name = self.label_name.copy()
+        # create column context dict instead ?
         self.feat_ops = {}
         self.stat_ops = {}
         self.df_ops = {}
         self.stats = {}
         self.to_cpu = to_cpu
+        if config:
+            self.load_config(config)
+        else:
+            warnings.warn("No Config was loaded, unable to create task list")
         if feat_ops:
             self.reg_feat_ops(feat_ops)
         if stat_ops:
@@ -143,6 +146,25 @@ class Preprocessor:
             outdir, write_index=False, chunk_size=chunk_size, engine="pyarrow"
         )
 
+
+    def load_config(self, config):
+        # separate FE and PP
+        self.task_sets = {}
+        for task_set in config.keys():
+            self.task_sets[task_set] = self.build_tasks(config[task_set])
+        
+    def build_tasks(self, task_dict):
+        tasks = []
+        for cols, task_list in task_dict.items():
+            for task in task_list:
+                for op_id, dep_set in task.items():
+                    for dep_grp in dep_set:
+                        dep_cols = None
+                        if dep_grp:
+                            dep_cols = [dep_op.cols_suffix() for dep_op in dep_grp]
+                        tasks.append(cols, op_id, dep_cols)
+        return tasks
+        
     def update_stats(self, itr):
         """ Gather necessary column statistics in single pass.
         """

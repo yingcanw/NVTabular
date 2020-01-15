@@ -29,9 +29,9 @@ class DLLabelEncoder(object):
     def __init__(self, col, *args, **kwargs):
         self._cats= kwargs['cats'] if 'cats' in kwargs else cudf.Series([None])
         # writer needs to be mapped to same file in folder.
-        self.folder_path = f"{kwargs['path']}" if "path" in kwargs else col
+        self.folder_path = kwargs.get('path', col)
         self.col = col
-        self.limit_frac = kwargs['limit_frac'] if 'limit_frac' in kwargs else 0.1
+        self.limit_frac = kwargs.get('limit_frac', col) 
 
     def transform(self, y: cudf.Series, unk_idx=0) -> cudf.Series:
         """
@@ -84,6 +84,7 @@ class DLLabelEncoder(object):
 #             )
             encoded = cudf.Series(y.label_encoding(self._cats.values_to_string()))
         encoded = encoded.fillna(0)
+        # referencing https://github.com/rapidsai/cudf/issues/3785
         return encoded[:].replace(-1, 0)
     
 
