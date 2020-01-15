@@ -84,10 +84,8 @@ class DLLabelEncoder(object):
 #             )
             encoded = cudf.Series(y.label_encoding(self._cats.values_to_string()))
         encoded = encoded.fillna(0)
-        import pdb; pdb.set_trace()
-        encoded = encoded.replace(-1, 0)
-        pdb.set_trace()
-        return encoded.replace(-1, unk_idx)
+        return encoded[:].replace(-1, 0)
+    
 
 
     def series_size(self, s):

@@ -20,7 +20,6 @@ def test_dl_encoder_fit_transform_fim(datasets, batch, dskey):
     enc.fit(df_expect["name-string"])
     new_ser = enc.transform(df_expect["name-string"])
     unis = set(df_expect["name-string"])
-    import pdb; pdb.set_trace()
     assert len(unis) == max(new_ser)    
 
     

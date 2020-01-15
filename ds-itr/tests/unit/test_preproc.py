@@ -275,10 +275,12 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     if engine == "parquet":
         cats_expected0 = df["name-cat"].unique().values_to_string()
         cats0 = processor.stats["encoders"]["name-cat"]._cats.values_to_string()
-        assert cats0 == cats_expected0
+        #adding the None entry as a string because of move from gpu
+        assert cats0 == ["None"] + cats_expected0
     cats_expected1 = df["name-string"].unique().values_to_string()
     cats1 = processor.stats["encoders"]["name-string"]._cats.values_to_string()
-    assert cats1 == cats_expected1
+    #adding the None entry as a string because of move from gpu
+    assert cats1 == ["None"] + cats_expected1
 
     # Write to new "shuffled" and "processed" dataset
     processor.write_to_dataset(
