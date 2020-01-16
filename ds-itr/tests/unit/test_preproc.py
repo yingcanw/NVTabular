@@ -359,13 +359,6 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
     assert math.isclose(df.y.std(), processor.stats["stds"]["y"], rel_tol=1e-3)
     assert math.isclose(df.id.std(), processor.stats["stds"]["id"], rel_tol=1e-3)
 
-    # Check median (TODO: Improve the accuracy)
-    x_median = df.x.dropna().quantile(0.5, interpolation="linear")
-    y_median = df.y.dropna().quantile(0.5, interpolation="linear")
-    id_median = df.id.dropna().quantile(0.5, interpolation="linear")
-    assert math.isclose(x_median, processor.stats["medians"]["x"], rel_tol=1e1)
-    assert math.isclose(y_median, processor.stats["medians"]["y"], rel_tol=1e1)
-    assert math.isclose(id_median, processor.stats["medians"]["id"], rel_tol=1e-2)
 
     # Check that categories match
     if engine == "parquet":

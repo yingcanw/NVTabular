@@ -75,11 +75,11 @@ class MinMax(StatOperator):
     maxs = {}
 
     def read_itr(
-        self, gdf: cudf.DataFrame, target_columns: []
+        self, gdf: cudf.DataFrame, cont_names: [], cat_names: [], label_name: []
     ):
         """ Iteration level Min Max collection, a chunk at a time
         """
-        for col in target_columns:
+        for col in cont_names + cat_names:
             col_min = min(gdf[col].dropna())
             col_max = max(gdf[col].dropna())
             if not col in self.batch_mins:
@@ -127,12 +127,12 @@ class Moments(StatOperator):
     stds = {}
 
     def read_itr(
-        self, gdf: cudf.DataFrame, target_columns: []
+        self, gdf: cudf.DataFrame, cont_names: [], cat_names: [], label_name: []
     ):
         """ Iteration-level moment algorithm (mean/std).
         """
-        gdf_cont = gdf[target_columns]
-        for col in target_columns:
+        gdf_cont = gdf[cont_names]
+        for col in cont_names:
             if col not in self.counts:
                 self.counts[col] = 0.0
                 self.means[col] = 0.0
@@ -197,11 +197,11 @@ class Median(StatOperator):
         self.fill = fill
 
     def read_itr(
-        self, gdf: cudf.DataFrame, target_columns: []
+        self, gdf: cudf.DataFrame, cont_names: [], cat_names: [], label_name: []
     ):
         """ Iteration-level median algorithm.
         """
-        for name in target_columns:
+        for name in cont_names:
             if name not in self.batch_medians:
                 self.batch_medians[name] = []
             col = gdf[name].copy()
@@ -242,13 +242,13 @@ class Encoder(StatOperator):
     categories = {}
 
     def read_itr(
-        self, gdf: cudf.DataFrame, target_columns: []
+        self, gdf: cudf.DataFrame, cont_names: [], cat_names: [], label_name: []
     ):
         """ Iteration-level categorical encoder update.
         """
-        if not target_columns:
+        if not cat_names:
             return
-        for name in target_columns:
+        for name in cat_names:
             if not name in self.encoders:
                 self.encoders[name] = DLLabelEncoder(name)
                 gdf[name].append([None])
@@ -291,52 +291,41 @@ class Encoder(StatOperator):
         return
 
 
-    
 class Export(TransformOperator):
-    def __init__(self, path="exp_out", nfiles=1, shuffle=True, **kwargs):
+    def __init__(self, path='./ds_export', nfiles=1, shuffle=True, **kwargs):
         self.path = path
         self.nfiles = nfiles
         self.shuffle = True
 
     def apply_op(
-        self,
-        gdf: cudf.DataFrame,
-        target_columns: []
+        self, gdf: cudf.DataFrame, cont_names: list, cat_names: list, label_name: list,
     ):
         writer = DatasetWriter(self.path, nfiles=self.nfiles)
         writer.write(gdf, shuffle=self.shuffle)
         writer.write_metadata()
         return gdf
 
-    def cols_suffix(self):
-        return None
 
 class ZeroFill(TransformOperator):
     def apply_op(
-        self,
-        gdf: cudf.DataFrame,
-        target_columns: []
+        self, gdf: cudf.DataFrame, cont_names: list, cat_names: list, label_name: list,
     ):
-        if not target_columns:
+        if not cont_names:
             return gdf
-        z_gdf = gdf[target_columns].fillna(0)
+        z_gdf = gdf[cont_names].fillna(0)
         z_gdf[z_gdf < 0] = 0
-        z_gdf.columns = [f"{x}{self.cols_suffix}" for x in z_gdf.columns]
-        gdf = cudf.concat([gdf, z_gdf], axis=1)
+        gdf = cudf.concat([gdf[label_name], gdf[cat_names], z_gdf], axis=1)
         return gdf
-    
-    
+
+
 class LogOp(TransformOperator):
-    
     def apply_op(
-        self,
-        gdf: cudf.DataFrame,
-        target_columns: []
+        self, gdf: cudf.DataFrame, cont_names: list, cat_names: list, label_name: list,
     ):
-        if not target_columns:
+        if not cont_names:
             return gdf
-        new_gdf = np.log(gdf[target_columns].astype(np.float32) + 1)
-        gdf = cudf.concat([gdf, new_gdf], axis=1)
+        new_gdf = np.log(gdf[cont_names].astype(np.float32) + 1)
+        gdf = cudf.concat([gdf[cat_names], gdf[label_name], new_gdf], axis=1)
         return gdf
 
 
@@ -413,7 +402,7 @@ class FillMissing(DFOperator):
             if name_na not in cat_names:
                 cat_names.append(name_na)
         return gdf
-    
+
 
 class Categorify(DFOperator):
     """ Transform the categorical variables to that type.
@@ -460,7 +449,6 @@ class Categorify(DFOperator):
         sz = sz_dict.get(n, int(self.emb_sz_rule(n_cat)))  # rule of thumb
         self.embed_sz[n] = sz
         return n_cat, sz
-    
     
 all_ops = [
     MinMax(),
