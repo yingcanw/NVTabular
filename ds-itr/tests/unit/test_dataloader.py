@@ -138,7 +138,7 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     x_max = max(df["x"])
     y_max = max(df["y"])
     assert x_max == processor.stats["maxs"]["x"]
-    assert y_max == processor.stats["maxs"]["y"]    
+    assert y_max == processor.stats["maxs"]["y"]
 
     # Check that categories match
     if engine == "parquet":

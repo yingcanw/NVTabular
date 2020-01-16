@@ -44,7 +44,7 @@ def test_minmax(tmpdir, datasets, gpu_memory_frac, engine):
         gpu_memory_frac=gpu_memory_frac,
         names=allcols_csv,
     )
-       
+
     processor = pp.Preprocessor(
         cat_names=cat_names,
         cont_names=cont_names,
@@ -100,7 +100,7 @@ def test_moments(tmpdir, datasets, gpu_memory_frac, engine):
         gpu_memory_frac=gpu_memory_frac,
         names=allcols_csv,
     )
-       
+
     processor = pp.Preprocessor(
         cat_names=cat_names,
         cont_names=cont_names,
@@ -111,7 +111,7 @@ def test_moments(tmpdir, datasets, gpu_memory_frac, engine):
     )
 
     processor.update_stats(data_itr)
-    
+
     # Check mean and std
     assert math.isclose(df.x.mean(), processor.stats["means"]["x"], rel_tol=1e-4)
     assert math.isclose(df.y.mean(), processor.stats["means"]["y"], rel_tol=1e-4)
@@ -119,7 +119,7 @@ def test_moments(tmpdir, datasets, gpu_memory_frac, engine):
     assert math.isclose(df.x.std(), processor.stats["stds"]["x"], rel_tol=1e-3)
     assert math.isclose(df.y.std(), processor.stats["stds"]["y"], rel_tol=1e-3)
     assert math.isclose(df.id.std(), processor.stats["stds"]["id"], rel_tol=1e-3)
-    
+
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
@@ -151,7 +151,7 @@ def test_encoder(tmpdir, datasets, gpu_memory_frac, engine):
         gpu_memory_frac=gpu_memory_frac,
         names=allcols_csv,
     )
-       
+
     processor = pp.Preprocessor(
         cat_names=cat_names,
         cont_names=cont_names,
@@ -162,7 +162,7 @@ def test_encoder(tmpdir, datasets, gpu_memory_frac, engine):
     )
 
     processor.update_stats(data_itr)
-    
+
     # Check that categories match
     if engine == "parquet":
         cats_expected0 = df["name-cat"].unique().values_to_string()
@@ -203,7 +203,7 @@ def test_median(tmpdir, datasets, gpu_memory_frac, engine):
         gpu_memory_frac=gpu_memory_frac,
         names=allcols_csv,
     )
-       
+
     processor = pp.Preprocessor(
         cat_names=cat_names,
         cont_names=cont_names,
@@ -214,7 +214,7 @@ def test_median(tmpdir, datasets, gpu_memory_frac, engine):
     )
 
     processor.update_stats(data_itr)
-    
+
     # Check median (TODO: Improve the accuracy)
     x_median = df.x.dropna().quantile(0.5, interpolation="linear")
     y_median = df.y.dropna().quantile(0.5, interpolation="linear")
@@ -254,7 +254,7 @@ def test_log(tmpdir, datasets, gpu_memory_frac, engine):
         gpu_memory_frac=gpu_memory_frac,
         names=allcols_csv,
     )
-       
+
     log_op = ops.LogOp()
 
     for gdf in data_itr:

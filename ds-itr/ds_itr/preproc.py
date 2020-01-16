@@ -11,6 +11,7 @@ try:
 except ImportError:
     import numpy as cp
 
+
 def _shuffle_part(gdf):
     sort_key = "__sort_index__"
     arr = cp.arange(len(gdf))
@@ -34,7 +35,6 @@ class Preprocessor:
         self.cat_names = cat_names or []
         self.cont_names = cont_names or []
         self.label_name = label_name or []
-        # create column context dict instead ?
         self.feat_ops = {}
         self.stat_ops = {}
         self.df_ops = {}
@@ -55,27 +55,16 @@ class Preprocessor:
 
         self.clear_stats()
 
-    
-    def update_columns(self, gdf: cudf.DataFrame):
-        new_all_cols = [self.new_cont_names, self.new_cat_names, self.new_label_name]
-        for idx, col in enumerate(gdf.columns):
-            for grp in new_all_cols:
-                if col.split('_')[0] in grp and col not in grp:
-                    grp.append(col)
-                
-        
     def reg_feat_ops(self, feat_ops):
         for feat_op in feat_ops:
             self.feat_ops[feat_op._id] = feat_op
-    
-    
+
     def reg_df_ops(self, df_ops):
         for df_op in df_ops:
             dfop_id, dfop_rs = df_op._id, df_op.req_stats
             self.reg_stat_ops(dfop_rs)
             self.df_ops[dfop_id] = df_op
-    
-    
+
     def reg_stat_ops(self, stat_ops):
         for stat_op in stat_ops:
             # pull stats, ensure no duplicates
@@ -87,8 +76,7 @@ class Preprocessor:
                         f"The following statistic was not added because it already exists: {stat}"
                     )
             # add actual statistic operator, after all stats added
-            self.stat_ops[stat_op._id] = stat_op        
-    
+            self.stat_ops[stat_op._id] = stat_op
 
     def write_to_dataset(
         self, path, itr, apply_ops=False, nfiles=1, shuffle=True, **kwargs
@@ -138,7 +126,7 @@ class Preprocessor:
 
         # Apply Operations (if desired)
         if apply_ops:
-            gddf = gddf.map_partitions(self.apply_ops)
+            gddf = gddf.map_partitions(self.apply_ops, meta=self.apply_ops(gddf.head()))
 
         # Write each partition to an output parquet file
         # (row groups correspond to `chunk_size`)
@@ -171,7 +159,6 @@ class Preprocessor:
         for gdf in itr:
             for name, feat_op in self.feat_ops.items():
                 feat_op.apply_op(gdf, self.cont_names, self.cat_names, self.label_name)
-#                 self.update_columns(gdf)
             for name, stat_op in self.stat_ops.items():
                 stat_op.read_itr(gdf, self.cont_names, self.cat_names, self.label_name)
         for name, stat_op in self.stat_ops.items():
@@ -187,13 +174,16 @@ class Preprocessor:
                     self.stats[name] = stat
                 else:
                     warnings.warn("stat not found,", name)
-        print(self.stats)
 
     def save_stats(self, path):
         stats_drop = {}
         stats_drop["encoders"] = {}
-        for name, enc in self.stats["encoders"].items():
-            stats_drop["encoders"][name] = (enc.folder_path, enc._cats.values_to_string())
+        encoders = self.stats.get("encoders", {})
+        for name, enc in encoders.items():
+            stats_drop["encoders"][name] = (
+                enc.folder_path,
+                enc._cats.values_to_string(),
+            )
         for name, stat in self.stats.items():
             if name not in stats_drop.keys():
                 stats_drop[name] = stat
@@ -203,22 +193,24 @@ class Preprocessor:
     def load_stats(self, path):
         def _set_stats(self, stats_dict):
             for key, stat in stats_dict.items():
-                    self.stats[key] = stat
+                self.stats[key] = stat
 
         if isinstance(path, dict):
             _set_stats(self, path)
         else:
             with open(path, "r") as infile:
                 _set_stats(self, yaml.load(infile))
-        for col, cats in self.stats["encoders"].items():
-            self.stats["encoders"][col] = DLLabelEncoder(col, path=cats[0], cats=cudf.Series(cats[1]))
+        encoders = self.stats.get("encoders", {})
+        for col, cats in encoders.items():
+            self.stats["encoders"][col] = DLLabelEncoder(
+                col, path=cats[0], cats=cudf.Series(cats[1])
+            )
 
     def apply_ops(self, gdf):
         for name, op in self.df_ops.items():
             gdf = op.apply_op(
                 gdf, self.stats, self.cont_names, self.cat_names, self.label_name
             )
-            self.update_columns(gdf)
         return gdf
 
     def clear_stats(self):
@@ -252,7 +244,9 @@ class Preprocessor:
         for gdf in itr:
             if apply_ops:
                 for name, feat_op in self.feat_ops.items():
-                    gdf = feat_op.apply_op(gdf, self.cont_names, self.cat_names, self.label_name)
+                    gdf = feat_op.apply_op(
+                        gdf, self.cont_names, self.cat_names, self.label_name
+                    )
                 gdf = self.apply_ops(gdf)
 
             gdf_cats, gdf_conts, gdf_label = (

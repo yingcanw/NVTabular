@@ -116,7 +116,6 @@ def to_tensor(gdf: cudf.DataFrame, dtype, tensor_list, to_cpu=False):
         return
     for column in gdf.columns:
         gdf_col = gdf[column]
-        #import pdb; pdb.set_trace()
         g = gdf_col.to_dlpack()
         t = from_dlpack(g).type(dtype)
         t = t.to(torch.device("cpu")) if to_cpu else t

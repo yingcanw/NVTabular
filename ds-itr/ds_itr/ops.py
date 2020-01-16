@@ -13,6 +13,7 @@ class Operator:
     def describe(self):
         raise NotImplementedError("All operators must have a desription.")
 
+
 class TransformOperator(Operator):
     def apply_op(
         self,
@@ -25,13 +26,11 @@ class TransformOperator(Operator):
         )
 
     def cols_suffix(self):
-        raise NotImplementedError(
-            "if transform creates new columns, the postfix for the new columns should be returned from this method"
-        )
+        return f"_{self._id}"
 
 
 class DFOperator(TransformOperator):
-    
+
     def required_stats(self):
         raise NotImplementedError(
             "Should consist of a list of identifiers, that should map to available statistics"
@@ -74,7 +73,7 @@ class MinMax(StatOperator):
     batch_maxs = {}
     mins = {}
     maxs = {}
-    
+
     def read_itr(
         self, gdf: cudf.DataFrame, target_columns: []
     ):
@@ -89,11 +88,11 @@ class MinMax(StatOperator):
             self.batch_mins[col].append(col_min)
             self.batch_maxs[col].append(col_max)
         return
-    
+
     def read_fin(self):
-        
+
         for col in self.batch_mins.keys():
-            # required for exporting values later, 
+            # required for exporting values later,
             # must move values from gpu if cupy->numpy not supported
             self.batch_mins[col] = cudf.Series(self.batch_mins[col]).tolist()
             self.batch_maxs[col] = cudf.Series(self.batch_maxs[col]).tolist()
@@ -103,24 +102,23 @@ class MinMax(StatOperator):
 
     def registered_stats(self):
         return ["mins", "maxs", "batch_mins", "batch_maxs"]
-        
-        
+
     def stats_collected(self):
         result = [
             ("mins", self.mins),
             ("maxs", self.maxs),
             ("batch_mins", self.batch_mins),
-            ("batch_maxs", self.batch_maxs)
+            ("batch_maxs", self.batch_maxs),
         ]
         return result
-    
+
     def clear(self):
         self.batch_mins = {}
         self.batch_maxs = {}
         self.mins = {}
         self.maxs = {}
         return
-        
+
 
 class Moments(StatOperator):
     counts = {}
@@ -179,7 +177,7 @@ class Moments(StatOperator):
             ("means", self.means),
             ("stds", self.stds),
             ("vars", self.varis),
-            ("counts", self.counts)
+            ("counts", self.counts),
         ]
         return result
 
@@ -224,7 +222,6 @@ class Median(StatOperator):
             self.medians[col] = float(
                 self.batch_medians[col][len(self.batch_medians[col]) // 2]
             )
-        print(self.medians)
         return
 
     def registered_stats(self):
@@ -263,38 +260,44 @@ class Encoder(StatOperator):
         """
         for name, val in self.encoders.items():
             self.categories[name] = self.cat_read_all_files(val)
-        return 
-    
+        return
+
     def cat_read_all_files(self, cat_obj):
         cat_size = cat_obj._cats.shape[0]
-        file_paths = [f"{cat_obj.col}/{x}" for x in os.listdir(cat_obj.col) if x.endswith('parquet')] if os.path.exists(cat_obj.col) else []
+        file_paths = (
+            [
+                f"{cat_obj.col}/{x}"
+                for x in os.listdir(cat_obj.col)
+                if x.endswith("parquet")
+            ]
+            if os.path.exists(cat_obj.col)
+            else []
+        )
         for fi in file_paths:
             chunk = cudf.read_parquet(fi)
             cat_size = cat_size + chunk.shape[0]
         return cat_size
-        
 
     def registered_stats(self):
         return ["encoders", "categories"]
 
     def stats_collected(self):
-        result = [("encoders", self.encoders),
-                  ("categories", self.categories)]
-        return result    
+        result = [("encoders", self.encoders), ("categories", self.categories)]
+        return result
 
     def clear(self):
         self.encoders = {}
         self.categories = {}
-        return    
+        return
+
 
     
 class Export(TransformOperator):
-    
     def __init__(self, path, nfiles=1, shuffle=True, **kwargs):
         self.path = path
         self.nfiles = nfiles
         self.shuffle = True
-    
+
     def apply_op(
         self,
         gdf: cudf.DataFrame,
@@ -304,7 +307,7 @@ class Export(TransformOperator):
         writer.write(gdf, shuffle=self.shuffle)
         writer.write_metadata()
         return gdf
-    
+
     def cols_suffix(self):
         return None
 
@@ -322,9 +325,6 @@ class ZeroFill(TransformOperator):
         gdf = cudf.concat([gdf, z_gdf], axis=1)
         return gdf
     
-    def cols_suffix(self):
-        return f"_{self._id}"
-    
     
 class LogOp(TransformOperator):
     
@@ -333,17 +333,13 @@ class LogOp(TransformOperator):
         gdf: cudf.DataFrame,
         target_columns: []
     ):
-        if not cont_names:
+        if not target_columns:
             return gdf
-        new_gdf = np.log(gdf[cont_names].astype(np.float32) + 1)
-        new_gdf.columns = [f"{name}_log" for name in new_gdf.columns]
+        new_gdf = np.log(gdf[target_columns].astype(np.float32) + 1)
         gdf = cudf.concat([gdf, new_gdf], axis=1)
         return gdf
 
-    def cols_suffix(self):
-        return f"_{self._id}"   
-    
-    
+
 class Normalize(DFOperator):
     """ Normalize the continuous variables.
     """
@@ -366,19 +362,13 @@ class Normalize(DFOperator):
         return gdf
 
     def apply_mean_std(self, gdf, stats_context, cont_names):
-        new_conts = []
         for name in cont_names:
             if stats_context["stds"][name] > 0:
-                new_col = f"{name}_{self._id}"
-                gdf[new_col] = (gdf[name] - stats_context["means"][name]) / (
+                gdf[name] = (gdf[name] - stats_context["means"][name]) / (
                     stats_context["stds"][name]
                 )
-                new_conts.append(new_col) 
-            gdf[new_col] = gdf[new_col].astype("float32")
+            gdf[name] = gdf[name].astype("float32")
         return gdf
-    
-    def cols_suffix(self):
-        return f"_{self._id}"
 
 
 class FillMissing(DFOperator):
@@ -423,9 +413,6 @@ class FillMissing(DFOperator):
             if name_na not in cat_names:
                 cat_names.append(name_na)
         return gdf
-
-    def cols_suffix(self):
-        return f"_{self._id}"
     
 
 class Categorify(DFOperator):
@@ -473,6 +460,3 @@ class Categorify(DFOperator):
         sz = sz_dict.get(n, int(self.emb_sz_rule(n_cat)))  # rule of thumb
         self.embed_sz[n] = sz
         return n_cat, sz
-
-    def cols_suffix(self):
-        return f"_{self._id}"
