@@ -5,6 +5,7 @@ import numpy as np
 import cudf
 from ds_itr.dl_encoder import DLLabelEncoder
 from ds_itr.ds_writer import DatasetWriter
+from ds_itr.ops import *
 
 try:
     import cupy as cp
@@ -32,6 +33,7 @@ class Preprocessor:
         to_cpu=True,
         config=None
     ):
+        self.reg_funcs = {'FE': self.reg_feat_ops, 'PP':self.reg_df_ops}
         self.cat_names = cat_names or []
         self.cont_names = cont_names or []
         self.label_name = label_name or []
@@ -140,24 +142,48 @@ class Preprocessor:
         self.task_sets = {}
         for task_set in config.keys():
             self.task_sets[task_set] = self.build_tasks(config[task_set])
+    
+        for t_set, task_list in self.task_sets.items():
+            for tup in task_list:
+                self.reg_funcs[t_set]([tup[0]])
+                
         
     def build_tasks(self, task_dict):
-        tasks = []
+        none_tasks = []
+        dep_tasks = []
         for cols, task_list in task_dict.items():
             for task in task_list:
                 for op_id, dep_set in task.items():
-                    for dep_grp in dep_set:
-                        dep_cols = None
-                        if dep_grp:
-                            dep_cols = [dep_op.cols_suffix() for dep_op in dep_grp]
-                        tasks.append(cols, op_id, dep_cols)
-        return tasks
+                    # get op from op_id
+                    target_op = None
+                    for op in all_ops:
+                        if op_id in op._id:
+                            target_op = op
+                            if hasattr(op, 'req_stats'):
+                                self.reg_stat_ops(op.req_stats)
+                            break
+                    if dep_set and target_op:
+                        for dep_grp in dep_set:
+                            dep_cols = None
+                            if dep_grp:
+                                dep_cols = [dep_op.cols_suffix() for dep_op in dep_grp]
+                                target_cols = [f"{col}{dep_cols}" for col in cols]
+                                dep_tasks.append((target_op, target_cols))
+                                break
+                    if not target_op:
+                        warnings.warn(f"""Did not find corresponding op for id: {op_id}. 
+                                      If this is a custom operator, check it was properyl
+                                      loaded.""")
+                    else:
+                        none_tasks.append((target_op, cols))
+        return none_tasks + dep_tasks
         
     def update_stats(self, itr):
         """ Gather necessary column statistics in single pass.
         """
+        fe_tasks = self.task_sets.get("FE_tasks", {})
         for gdf in itr:
-            for name, feat_op in self.feat_ops.items():
+            for name, fe_task in fe_tasks.items():
                 feat_op.apply_op(gdf, self.cont_names, self.cat_names, self.label_name)
             for name, stat_op in self.stat_ops.items():
                 stat_op.read_itr(gdf, self.cont_names, self.cat_names, self.label_name)

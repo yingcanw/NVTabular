@@ -15,111 +15,6 @@ import random
 import os
 
 
-# allcols_csv = ["timestamp", "id", "label", "name-string", "x", "y", "z"]
-# mycols_csv = ["name-string", "id", "label", "x", "y"]
-# mycols_pq = ["name-cat", "name-string", "id", "label", "x", "y"]
-# mynames = [
-#     "Alice",
-#     "Bob",
-#     "Charlie",
-#     "Dan",
-#     "Edith",
-#     "Frank",
-#     "George",
-#     None,
-#     "Ingrid",
-#     "Jerry",
-#     "Kevin",
-#     "Laura",
-#     "Michael",
-#     "Norbert",
-#     "Oliver",
-#     "Patricia",
-#     "Quinn",
-#     "Ray",
-#     "Sarah",
-#     "Ursula",
-#     "Victor",
-#     "Wendy",
-#     "Xavier",
-#     "Yvonne",
-#     "Zelda",
-# ]
-
-# sample_stats = {
-#     "batch_medians": {
-#         "id": [999.0, 1000.0],
-#         "x": [-0.051, -0.001],
-#         "y": [-0.009, -0.001],
-#     },
-#     "medians": {"id": 1000.0, "x": -0.001, "y": -0.001},
-#     "means": {"id": 1000.0, "x": -0.008, "y": -0.001},
-#     "vars": {"id": 993.65, "x": 0.338, "y": 0.335},
-#     "stds": {"id": 31.52, "x": 0.581, "y": 0.578},
-#     "counts": {"id": 4321.0, "x": 4321.0, "y": 4321.0},
-#     "encoders": {
-#         "name-cat": ("name-cat", mynames),
-#         "name-string": ("name-string", mynames),
-#     },
-# }
-
-
-@pytest.fixture(scope="session")
-def datasets(tmpdir_factory):
-    df = cudf.datasets.timeseries(
-        start="2000-01-01",
-        end="2000-01-04",
-        freq="60s",
-        dtypes={
-            "name-cat": "category",
-            "name-string": "category",
-            "id": int,
-            "label": int,
-            "x": float,
-            "y": float,
-            "z": float,
-        },
-    ).reset_index()
-    df["name-string"] = df["name-string"].astype("O")
-
-    # Add two random null values to each column
-    imax = len(df) - 1
-    for col in df.columns:
-        if col in ["name-cat", "label"]:
-            break
-        df[col].iloc[random.randint(0, imax)] = None
-        df[col].iloc[random.randint(0, imax)] = None
-
-    datadir = tmpdir_factory.mktemp("data")
-    datadir = {
-        "parquet": tmpdir_factory.mktemp("parquet"),
-        "csv": tmpdir_factory.mktemp("csv"),
-        "csv-no-header": tmpdir_factory.mktemp("csv-no-header"),
-    }
-
-    half = int(len(df) // 2)
-
-    # Write Parquet Dataset
-    df.iloc[:half].to_parquet(str(datadir["parquet"]), chunk_size=1000)
-    df.iloc[half:].to_parquet(str(datadir["parquet"]), chunk_size=1000)
-
-    # Write CSV Dataset (Leave out categorical column)
-    df.iloc[:half].drop(columns=["name-cat"]).to_csv(
-        str(datadir["csv"].join("dataset-0.csv")), index=False
-    )
-    df.iloc[half:].drop(columns=["name-cat"]).to_csv(
-        str(datadir["csv"].join("dataset-1.csv")), index=False
-    )
-    df.iloc[:half].drop(columns=["name-cat"]).to_csv(
-        str(datadir["csv-no-header"].join("dataset-0.csv")), header=False, index=False
-    )
-    df.iloc[half:].drop(columns=["name-cat"]).to_csv(
-        str(datadir["csv-no-header"].join("dataset-1.csv")), header=False, index=False
-    )
-
-    return datadir
-
-
 @pytest.mark.parametrize("batch", [0, 100, 1000])
 def test_gpu_file_iterator_parquet(datasets, batch):
     paths = glob.glob(str(datasets["parquet"]) + "/*.parquet")
@@ -419,19 +314,19 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
     
     config = {}
     # first level column list
-    config["FE_tasks"] = {}
-    config["FE_tasks"]["all"] = {}
-    config["FE_tasks"]["continuous"] = {}
-    config["FE_tasks"]["categorical"] = {}
+    config["FE"] = {}
+    config["FE"]["all"] = {}
+    config["FE"]["continuous"] = {}
+    config["FE"]["categorical"] = {}
     # add operators with dependencies
-    config["FE_tasks"]["continuous"] = [{ops.ZeroFill()._id: [[]]},
+    config["FE"]["continuous"] = [{ops.ZeroFill()._id: [[]]},
                                         {ops.LogOp()._id: [[ops.ZeroFill(),]]}]
-    config["PP_tasks"] = {}
-    config["PP_tasks"]["all"] = {}
-    config["PP_tasks"]["continuous"] = {}
-    config["PP_tasks"]["categorical"] = {}
-    config["PP_tasks"]["categorical"] = [{ops.Categorify()._id: [[]]}]
-    config["PP_tasks"]["continuous"] = [{ops.Normalize()._id: [[ops.LogOp()]]}]
+    config["PP"] = {}
+    config["PP"]["all"] = {}
+    config["PP"]["continuous"] = {}
+    config["PP"]["categorical"] = {}
+    config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
+    config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.LogOp()]]}]
 
     processor = pp.Preprocessor(
         cat_names=cat_names,

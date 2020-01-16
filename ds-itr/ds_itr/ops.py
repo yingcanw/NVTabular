@@ -293,7 +293,7 @@ class Encoder(StatOperator):
 
     
 class Export(TransformOperator):
-    def __init__(self, path, nfiles=1, shuffle=True, **kwargs):
+    def __init__(self, path="exp_out", nfiles=1, shuffle=True, **kwargs):
         self.path = path
         self.nfiles = nfiles
         self.shuffle = True
@@ -460,3 +460,17 @@ class Categorify(DFOperator):
         sz = sz_dict.get(n, int(self.emb_sz_rule(n_cat)))  # rule of thumb
         self.embed_sz[n] = sz
         return n_cat, sz
+    
+    
+all_ops = [
+    MinMax(),
+    Moments(), 
+    Median(), 
+    Encoder(), 
+    Export(), 
+    ZeroFill(),
+    LogOp(),
+    Normalize(),
+    FillMissing(),
+    Categorify()
+]
