@@ -8,38 +8,13 @@ import time
 import math
 import random
 import os
+import numpy as np
 
 allcols_csv = ["timestamp", "id", "label", "name-string", "x", "y", "z"]
 mycols_csv = ["name-string", "id", "label", "x", "y"]
 mycols_pq = ["name-cat", "name-string", "id", "label", "x", "y"]
-mynames = [
-    "Alice",
-    "Bob",
-    "Charlie",
-    "Dan",
-    "Edith",
-    "Frank",
-    "Gary",
-    "Hannah",
-    "Ingrid",
-    "Jerry",
-    "Kevin",
-    "Laura",
-    "Michael",
-    "Norbert",
-    "Oliver",
-    "Patricia",
-    "Quinn",
-    "Ray",
-    "Sarah",
-    "Tim",
-    "Ursula",
-    "Victor",
-    "Wendy",
-    "Xavier",
-    "Yvonne",
-    "Zelda",
-]
+_cats = [f"QWE{x}" for x in range(0,200000)]
+mynames = np.random.choice(_cats, 100000)
 
 sample_stats = {
     "batch_medians": {
@@ -64,7 +39,7 @@ def datasets(tmpdir_factory):
     df = cudf.datasets.timeseries(
         start="2000-01-01",
         end="2000-01-04",
-        freq="60s",
+        freq="1s",
         dtypes={
             "name-cat": "category",
             "name-string": "category",
@@ -75,7 +50,7 @@ def datasets(tmpdir_factory):
             "z": float,
         },
     ).reset_index()
-    df["name-string"] = df["name-string"].astype("O")
+    df["name-string"] = cudf.Series(np.random.choice(mynames, df.shape[0])).astype("O")
 
     # Add two random null values to each column
     imax = len(df) - 1
@@ -85,11 +60,12 @@ def datasets(tmpdir_factory):
         df[col].iloc[random.randint(1, imax - 1)] = None
         df[col].iloc[random.randint(1, imax - 1)] = None
 
-    datadir = tmpdir_factory.mktemp("data")
+    datadir = tmpdir_factory.mktemp("data_test")
     datadir = {
         "parquet": tmpdir_factory.mktemp("parquet"),
         "csv": tmpdir_factory.mktemp("csv"),
         "csv-no-header": tmpdir_factory.mktemp("csv-no-header"),
+        "category": tmpdir_factory.mktemp("category"),
     }
 
     half = int(len(df) // 2)
