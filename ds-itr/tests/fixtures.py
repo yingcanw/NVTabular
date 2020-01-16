@@ -90,6 +90,7 @@ def datasets(tmpdir_factory):
         "parquet": tmpdir_factory.mktemp("parquet"),
         "csv": tmpdir_factory.mktemp("csv"),
         "csv-no-header": tmpdir_factory.mktemp("csv-no-header"),
+        "cats": tmpdir_factory.mktemp("cats"),
     }
 
     half = int(len(df) // 2)
