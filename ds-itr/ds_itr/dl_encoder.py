@@ -23,13 +23,13 @@ def _enforce_npint32(y: cudf.Series) -> cudf.Series:
 
 
 class DLLabelEncoder(object):
-    def __init__(self, col, *args, **kwargs):
-        self._cats = kwargs["cats"] if "cats" in kwargs else cudf.Series([None])
+    def __init__(self, col, cats=cudf.Series([None]), path=os.path.join(os.getcwd(), 'label_encoders'), limit_frac=0.1):
+        self._cats = cats
         # writer needs to be mapped to same file in folder.
-        self.folder_path = os.path.join(kwargs.get("path", os.getcwd()), col)
+        self.folder_path = os.path.join(path, col)
         self.file_paths = []
         self.col = col
-        self.limit_frac = kwargs.get("limit_frac", 0.1)
+        self.limit_frac = limit_frac
 
     def transform(self, y: cudf.Series, unk_idx=0) -> cudf.Series:
         """
@@ -52,7 +52,7 @@ class DLLabelEncoder(object):
             if a category appears that was not seen in `fit`
         """
         # Need to watch out for None calls now
-        y = _enforce_str(y)
+        y = _enforce_str(y).reset_index(drop=True)
         encoded = None
         if os.path.exists(self.folder_path):
             # some cats in memory some in disk
@@ -68,7 +68,7 @@ class DLLabelEncoder(object):
                     # must reconstruct encoded series from multiple parts
                     # zero out unknowns using na_sentinel
                     part_encoded = cudf.Series(
-                        y.label_encoding(chunk[self.col].values_to_string(), na_sentinel=0)
+                        y.label_encoding(chunk[self.col], na_sentinel=0)
                     )
                     # added ref count to all values over zero in series
                     part_encoded = part_encoded + (part_encoded>0).astype("int") * rec_count
@@ -79,7 +79,7 @@ class DLLabelEncoder(object):
                     rec_count = rec_count + len(chunk)
         else:
             # all cats in memory
-            encoded = cudf.Series(y.label_encoding(self._cats.values_to_string(), na_sentinel=0))
+            encoded = cudf.Series(y.label_encoding(self._cats, na_sentinel=0))
         return encoded[:].replace(-1, 0)
 
     def series_size(self, s):
@@ -89,7 +89,7 @@ class DLLabelEncoder(object):
             return s.dtype.itemsize * len(s)
 
     def fit(self, y: cudf.Series):
-        y = _enforce_str(y)
+        y = _enforce_str(y).reset_index(drop=True)
         if self._cats.empty:
             self._cats = self.one_cycle(y)
             return
