@@ -5,6 +5,7 @@
 - add "sep" keyword support for GPUDatasetIterator for CSV data files
 - Added TransformOperator class for Feature Engineering phase
 - Added Feature Engineering phase to pipeline(see preproc.update_stats)
+- Added new datasets_ltm fixture for ltm tests (see test_dl_encoder.py)
 
 ## Improvements
 
