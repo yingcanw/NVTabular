@@ -26,7 +26,8 @@ class DLLabelEncoder(object):
     def __init__(self, col, *args, **kwargs):
         self._cats = kwargs["cats"] if "cats" in kwargs else cudf.Series([None])
         # writer needs to be mapped to same file in folder.
-        self.folder_path = kwargs.get("path", col)
+        self.folder_path = os.path.join(kwargs.get("path", os.getcwd()), col)
+        self.file_paths = []
         self.col = col
         self.limit_frac = kwargs.get("limit_frac", 0.1)
 
@@ -53,24 +54,24 @@ class DLLabelEncoder(object):
         # Need to watch out for None calls now
         y = _enforce_str(y)
         encoded = None
-        if os.path.exists(self.col):
+        if os.path.exists(self.folder_path):
             # some cats in memory some in disk
-            file_paths = [
-                f"{self.col}/{x}" for x in os.listdir(self.col) if x.endswith("parquet")
+            file_paths = [os.path.join(self.folder_path, x) for x in os.listdir(self.folder_path) if x.endswith("parquet") if os.path.join(self.folder_path, x) not in self.file_paths
             ]
-            if file_paths:
+            self.file_paths.extend(file_paths)
+            if self.file_paths:
                 chunks = ds_itr.GPUDatasetIterator(file_paths)
                 encoded = cudf.Series()
                 rec_count = 0
                 # chunks represents a UNIQUE set of categorical representations
                 for chunk in chunks:
                     # must reconstruct encoded series from multiple parts
+                    # zero out unknowns using na_sentinel
                     part_encoded = cudf.Series(
-                        y.label_encoding(chunk[self.col].values_to_string())
+                        y.label_encoding(chunk[self.col].values_to_string(), na_sentinel=0)
                     )
-                    # zero out unknowns
-                    part_encoded.replace(-1, 0)
-                    part_encoded[part_encoded > 0].add(rec_count)
+                    # added ref count to all values over zero in series
+                    part_encoded = part_encoded + (part_encoded>0).astype("int") * rec_count
                     # continually add chunks to encoded to get full batch
                     encoded = (
                         part_encoded if encoded.empty else encoded.add(part_encoded)
@@ -78,9 +79,7 @@ class DLLabelEncoder(object):
                     rec_count = rec_count + len(chunk)
         else:
             # all cats in memory
-            encoded = cudf.Series(y.label_encoding(self._cats.values_to_string()))
-        encoded = encoded.fillna(0)
-        # slicing to fix https://github.com/rapidsai/cudf/issues/3785
+            encoded = cudf.Series(y.label_encoding(self._cats.values_to_string(), na_sentinel=0))
         return encoded[:].replace(-1, 0)
 
     def series_size(self, s):
@@ -92,7 +91,7 @@ class DLLabelEncoder(object):
     def fit(self, y: cudf.Series):
         y = _enforce_str(y)
         if self._cats.empty:
-            self._cats = self.one_cycle(y).unique()
+            self._cats = self.one_cycle(y)
             return
         self._cats = self._cats.append(self.one_cycle(y)).unique()
         # check if enough space to leave in gpu memory if category doubles in size
@@ -100,8 +99,8 @@ class DLLabelEncoder(object):
             numba.cuda.current_context().get_memory_info()[0] * self.limit_frac
         ):
             # first time dumping into file
-            if not os.path.exists(self.col):
-                os.makedirs(self.col)
+            if not os.path.exists(self.folder_path):
+                os.makedirs(self.folder_path)
             self.dump_cats()
 
     def merge_series(self, compr_a, compr_b):
@@ -115,14 +114,14 @@ class DLLabelEncoder(object):
     def dump_cats(self):
         x = cudf.DataFrame()
         x[self.col] = self._cats.unique()
-        x.to_parquet(self.col)
+        x.to_parquet(self.folder_path)
         self._cats = cudf.Series()
 
     def one_cycle(self, compr):
         # compr is already a list of unique values to check against
-        if os.path.exists(self.col):
+        if os.path.exists(self.folder_path):
             file_paths = [
-                f"{self.col}/{x}" for x in os.listdir(self.col) if x.endswith("parquet")
+                os.path.join(self.folder_path, x) for x in os.listdir(self.folder_path) if x.endswith("parquet")
             ]
             if file_paths:
                 chunks = ds_itr.GPUDatasetIterator(file_paths)
