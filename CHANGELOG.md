@@ -2,17 +2,17 @@
 
 ## New Features
 
-- add "sep" keyword support for GPUDatasetIterator for CSV data files
-- Added TransformOperator class for Feature Engineering phase
-- Added Feature Engineering phase to pipeline(see preproc.update_stats)
-- Added new datasets_ltm fixture for ltm tests (see test_dl_encoder.py)
+- PR#11 add "sep" keyword support for GPUDatasetIterator for CSV data files
+- PR#11 Added TransformOperator class for Feature Engineering phase
+- PR#11 Added Feature Engineering phase to pipeline(see preproc.update_stats)
+- PR#11 Added new datasets_ltm fixture for ltm tests (see test_dl_encoder.py)
 
 ## Improvements
 
-- dl_encoder refactor - supports Larger Than Memory categorical columns, no more nvstring/nvcategories
+- PR#11 dl_encoder refactor - supports Larger Than Memory categorical columns, no more nvstring/nvcategories
 
 
 ## Bug Fixes
 
-- pq_to_pq_processed fix to pass testing
-- Updated fixtures in tests, removed fixtures from preproc
+- PR#11 pq_to_pq_processed fix to pass testing
+- PR#11 Updated fixtures in tests, removed fixtures from preproc

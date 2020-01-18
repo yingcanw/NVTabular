@@ -23,11 +23,18 @@ def _enforce_npint32(y: cudf.Series) -> cudf.Series:
 
 
 class DLLabelEncoder(object):
-    def __init__(self, col, cats=cudf.Series([None]), path=os.path.join(os.getcwd(), 'label_encoders'), limit_frac=0.1):
-        self._cats = cats
+    def __init__(self, col, cats=None, path=None, limit_frac=0.1, file_paths=None):
+        # required because cudf.series does not compute bool type
+        self._cats = cats if type(cats) == cudf.Series else cudf.Series([cats])
         # writer needs to be mapped to same file in folder.
-        self.folder_path = os.path.join(path, col)
-        self.file_paths = []
+        self.path = path or os.path.join(os.getcwd(), 'label_encoders')
+        self.folder_path = os.path.join(self.path, col)
+        self.file_paths = file_paths or []
+        # incase there are files already in the directory, ignored
+        self.ignore_files = []
+        if os.path.exists(self.folder_path):
+            self.ignore_files = [os.path.join(self.folder_path, x) for x in os.listdir(self.folder_path) if x.endswith("parquet") and x not in self.file_paths
+                ]
         self.col = col
         self.limit_frac = limit_frac
 
@@ -54,13 +61,14 @@ class DLLabelEncoder(object):
         # Need to watch out for None calls now
         y = _enforce_str(y).reset_index(drop=True)
         encoded = None
-        if os.path.exists(self.folder_path):
+        if os.path.exists(self.folder_path) and self.file_paths:
             # some cats in memory some in disk
-            file_paths = [os.path.join(self.folder_path, x) for x in os.listdir(self.folder_path) if x.endswith("parquet") if os.path.join(self.folder_path, x) not in self.file_paths
+            file_paths = [os.path.join(self.folder_path, x) for x in os.listdir(self.folder_path) if x.endswith("parquet") and x not in self.file_paths + self.ignore_files
             ]
             self.file_paths.extend(file_paths)
+            self.file_paths = list(set(self.file_paths))
             if self.file_paths:
-                chunks = ds_itr.GPUDatasetIterator(file_paths)
+                chunks = ds_itr.GPUDatasetIterator(self.file_paths)
                 encoded = cudf.Series()
                 rec_count = 0
                 # chunks represents a UNIQUE set of categorical representations
@@ -77,6 +85,7 @@ class DLLabelEncoder(object):
                         part_encoded if encoded.empty else encoded.add(part_encoded)
                     )
                     rec_count = rec_count + len(chunk)
+                    
         else:
             # all cats in memory
             encoded = cudf.Series(y.label_encoding(self._cats, na_sentinel=0))
@@ -116,12 +125,18 @@ class DLLabelEncoder(object):
         x[self.col] = self._cats.unique()
         x.to_parquet(self.folder_path)
         self._cats = cudf.Series()
+        #should find new file just exported
+        new_file_path = [os.path.join(self.folder_path, x) for x in os.listdir(self.folder_path) if x.endswith("parquet") and x not in self.file_paths + self.ignore_files
+            ]
+        # add file to list
+        self.file_paths.extend(new_file_path)
+        
 
     def one_cycle(self, compr):
         # compr is already a list of unique values to check against
         if os.path.exists(self.folder_path):
             file_paths = [
-                os.path.join(self.folder_path, x) for x in os.listdir(self.folder_path) if x.endswith("parquet")
+                os.path.join(self.folder_path, x) for x in os.listdir(self.folder_path) if x.endswith("parquet") and x not in self.file_paths + self.ignore_files
             ]
             if file_paths:
                 chunks = ds_itr.GPUDatasetIterator(file_paths)
@@ -133,4 +148,4 @@ class DLLabelEncoder(object):
         return compr
 
     def __repr__(self):
-        return str(self._cats.values_to_string())
+        return ("{0}(_cats={1!r})".format(type(self).__name__, self._cats.values_to_string()))
