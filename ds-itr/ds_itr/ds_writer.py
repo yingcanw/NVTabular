@@ -1,4 +1,3 @@
-import warnings
 import random
 import glob
 import os
@@ -11,8 +10,6 @@ try:
     import cupy as cp
 except ImportError:
     import numpy as cp
-
-warnings.filterwarnings("ignore")
 
 
 class FileIterator:
@@ -36,6 +33,7 @@ class FileIterator:
         if self.ind >= self.nfiles:
             raise StopIteration
         self.ind += 1
+        # if self.name, return that naming convention.
         return "%s/ds_part.%d.parquet" % (self.path, self.ind - 1)
 
 

@@ -26,6 +26,7 @@ class Preprocessor:
         cat_names=None,
         cont_names=None,
         label_name=None,
+        feat_ops=None,
         stat_ops=None,
         df_ops=None,
         to_cpu=True,
@@ -33,39 +34,44 @@ class Preprocessor:
         self.cat_names = cat_names or []
         self.cont_names = cont_names or []
         self.label_name = label_name or []
+        self.feat_ops = {}
         self.stat_ops = {}
         self.df_ops = {}
         self.stats = {}
         self.to_cpu = to_cpu
+        if feat_ops:
+            self.reg_feat_ops(feat_ops)
         if stat_ops:
-            for stat_op in stat_ops:
-                # pull stats, ensure no duplicates
-                for stat in stat_op.registered_stats():
-                    if stat not in self.stats:
-                        self.stats[stat] = {}
-                    else:
-                        warnings.warn(
-                            f"The following statistic was not added because it already exists: {stat}"
-                        )
-                        break
-                # add actual statistic operator, after all stats added
-                self.stat_ops[stat_op._id] = stat_op
-        else:
-            warnings.warn("No Statistical Operators were loaded")
-        # after stats are loaded, add df_ops with available stats only
+            self.reg_stat_ops(stat_ops)
         if df_ops:
-            for df_op in df_ops:
-                dfop_id, dfop_rs = df_op._id, df_op.req_stats
-                if all(name in self.stats for name in dfop_rs):
-                    self.df_ops[dfop_id] = df_op
-                else:
-                    warnings.warn(
-                        f"The following df_op was not added because necessary stats not loaded: {dfop_id}, {dfop_rs}"
-                    )
+            self.reg_df_ops(df_ops)
         else:
             warnings.warn("No DataFrame Operators were loaded")
 
         self.clear_stats()
+
+    def reg_feat_ops(self, feat_ops):
+        for feat_op in feat_ops:
+            self.feat_ops[feat_op._id] = feat_op
+
+    def reg_df_ops(self, df_ops):
+        for df_op in df_ops:
+            dfop_id, dfop_rs = df_op._id, df_op.req_stats
+            self.reg_stat_ops(dfop_rs)
+            self.df_ops[dfop_id] = df_op
+
+    def reg_stat_ops(self, stat_ops):
+        for stat_op in stat_ops:
+            # pull stats, ensure no duplicates
+            for stat in stat_op.registered_stats():
+                if stat not in self.stats:
+                    self.stats[stat] = {}
+                else:
+                    warnings.warn(
+                        f"The following statistic was not added because it already exists: {stat}"
+                    )
+            # add actual statistic operator, after all stats added
+            self.stat_ops[stat_op._id] = stat_op
 
     def write_to_dataset(
         self, path, itr, apply_ops=False, nfiles=1, shuffle=True, **kwargs
@@ -115,7 +121,7 @@ class Preprocessor:
 
         # Apply Operations (if desired)
         if apply_ops:
-            gddf = gddf.map_partitions(self.apply_ops)
+            gddf = gddf.map_partitions(self.apply_ops, meta=self.apply_ops(gddf.head()))
 
         # Write each partition to an output parquet file
         # (row groups correspond to `chunk_size`)
@@ -127,6 +133,8 @@ class Preprocessor:
         """ Gather necessary column statistics in single pass.
         """
         for gdf in itr:
+            for name, feat_op in self.feat_ops.items():
+                feat_op.apply_op(gdf, self.cont_names, self.cat_names, self.label_name)
             for name, stat_op in self.stat_ops.items():
                 stat_op.read_itr(gdf, self.cont_names, self.cat_names, self.label_name)
         for name, stat_op in self.stat_ops.items():
@@ -144,34 +152,35 @@ class Preprocessor:
                     warnings.warn("stat not found,", name)
 
     def save_stats(self, path):
-
-        host_categories = {}
-        for col, cat in self.stats["categories"].items():
-            host_categories[col] = cat.to_host()
-
-        # Cannot dump categorical classes
-        data = {
-            key: val
-            for key, val in self.stats.items()
-            if key not in ["categories", "encoders"]
-        }
-        data["host_categories"] = host_categories
+        stats_drop = {}
+        stats_drop["encoders"] = {}
+        encoders = self.stats.get("encoders", {})
+        for name, enc in encoders.items():
+            stats_drop["encoders"][name] = (
+                enc.file_paths,
+                enc._cats.values_to_string(),
+            )
+        for name, stat in self.stats.items():
+            if name not in stats_drop.keys():
+                stats_drop[name] = stat
         with open(path, "w") as outfile:
-            yaml.dump(data, outfile, default_flow_style=False)
+            yaml.dump(stats_drop, outfile, default_flow_style=False)
 
     def load_stats(self, path):
         def _set_stats(self, stats_dict):
             for key, stat in stats_dict.items():
-                if key == "host_categories":
-                    self.encoders_from_host_cats(stat)
-                else:
-                    self.stats[key] = stat
+                self.stats[key] = stat
 
         if isinstance(path, dict):
             _set_stats(self, path)
         else:
             with open(path, "r") as infile:
                 _set_stats(self, yaml.load(infile))
+        encoders = self.stats.get("encoders", {})
+        for col, cats in encoders.items():
+            self.stats["encoders"][col] = DLLabelEncoder(
+                col, file_paths=cats[0], cats=cudf.Series(cats[1])
+            )
 
     def apply_ops(self, gdf):
         for name, op in self.df_ops.items():
@@ -187,15 +196,6 @@ class Preprocessor:
 
         for statop_id, stat_op in self.stat_ops.items():
             stat_op.clear()
-
-    def encoders_from_host_cats(self, host_categories):
-        """ Update encoders/categories using host_categories.
-        """
-        for name, cats in host_categories.items():
-            self.stats["encoders"][name] = DLLabelEncoder()
-            self.stats["encoders"][name].fit(cudf.Series(cats))
-            self.stats["categories"][name] = self.stats["encoders"][name]._cats.keys()
-        return
 
     def ds_to_tensors(self, itr, apply_ops=True):
         import torch
@@ -219,6 +219,10 @@ class Preprocessor:
         cats, conts, label = {}, {}, {}
         for gdf in itr:
             if apply_ops:
+                for name, feat_op in self.feat_ops.items():
+                    gdf = feat_op.apply_op(
+                        gdf, self.cont_names, self.cat_names, self.label_name
+                    )
                 gdf = self.apply_ops(gdf)
 
             gdf_cats, gdf_conts, gdf_label = (

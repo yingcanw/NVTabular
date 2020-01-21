@@ -6,115 +6,13 @@ import cudf
 import numpy as np
 from cudf.tests.utils import assert_eq
 import pytest
+from tests.fixtures import *
 
 import glob
 import time
 import math
 import random
 import os
-
-
-allcols_csv = ["timestamp", "id", "label", "name-string", "x", "y", "z"]
-mycols_csv = ["name-string", "id", "label", "x", "y"]
-mycols_pq = ["name-cat", "name-string", "id", "label", "x", "y"]
-mynames = [
-    "Alice",
-    "Bob",
-    "Charlie",
-    "Dan",
-    "Edith",
-    "Frank",
-    "George",
-    None,
-    "Ingrid",
-    "Jerry",
-    "Kevin",
-    "Laura",
-    "Michael",
-    "Norbert",
-    "Oliver",
-    "Patricia",
-    "Quinn",
-    "Ray",
-    "Sarah",
-    None,
-    "Ursula",
-    "Victor",
-    "Wendy",
-    "Xavier",
-    "Yvonne",
-    "Zelda",
-]
-
-sample_stats = {
-    "batch_medians": {
-        "id": [999.0, 1000.0],
-        "x": [-0.051, -0.001],
-        "y": [-0.009, -0.001],
-    },
-    "medians": {"id": 1000.0, "x": -0.001, "y": -0.001},
-    "means": {"id": 1000.0, "x": -0.008, "y": -0.001},
-    "vars": {"id": 993.65, "x": 0.338, "y": 0.335},
-    "stds": {"id": 31.52, "x": 0.581, "y": 0.578},
-    "counts": {"id": 4321.0, "x": 4321.0, "y": 4321.0},
-    "host_categories": {"name-cat": mynames, "name-string": mynames},
-}
-
-
-@pytest.fixture(scope="session")
-def datasets(tmpdir_factory):
-    df = cudf.datasets.timeseries(
-        start="2000-01-01",
-        end="2000-01-04",
-        freq="60s",
-        dtypes={
-            "name-cat": "category",
-            "name-string": "category",
-            "id": int,
-            "label": int,
-            "x": float,
-            "y": float,
-            "z": float,
-        },
-    ).reset_index()
-    df["name-string"] = df["name-string"].astype("O")
-
-    # Add two random null values to each column
-    imax = len(df) - 1
-    for col in df.columns:
-        if col in ["name-cat", "label"]:
-            break
-        df[col].iloc[random.randint(0, imax)] = None
-        df[col].iloc[random.randint(0, imax)] = None
-
-    datadir = tmpdir_factory.mktemp("data")
-    datadir = {
-        "parquet": tmpdir_factory.mktemp("parquet"),
-        "csv": tmpdir_factory.mktemp("csv"),
-        "csv-no-header": tmpdir_factory.mktemp("csv-no-header"),
-    }
-
-    half = int(len(df) // 2)
-
-    # Write Parquet Dataset
-    df.iloc[:half].to_parquet(str(datadir["parquet"]), chunk_size=1000)
-    df.iloc[half:].to_parquet(str(datadir["parquet"]), chunk_size=1000)
-
-    # Write CSV Dataset (Leave out categorical column)
-    df.iloc[:half].drop(columns=["name-cat"]).to_csv(
-        str(datadir["csv"].join("dataset-0.csv")), index=False
-    )
-    df.iloc[half:].drop(columns=["name-cat"]).to_csv(
-        str(datadir["csv"].join("dataset-1.csv")), index=False
-    )
-    df.iloc[:half].drop(columns=["name-cat"]).to_csv(
-        str(datadir["csv-no-header"].join("dataset-0.csv")), header=False, index=False
-    )
-    df.iloc[half:].drop(columns=["name-cat"]).to_csv(
-        str(datadir["csv-no-header"].join("dataset-1.csv")), header=False, index=False
-    )
-
-    return datadir
 
 
 @pytest.mark.parametrize("batch", [0, 100, 1000])
@@ -204,7 +102,6 @@ def test_gpu_dataset_iterator_csv(datasets, batch, dskey):
     )
     for data_gd in data_itr:
         df_itr = cudf.concat([df_itr, data_gd], axis=0) if df_itr else data_gd
-
     assert_eq(df_itr.reset_index(drop=True), df_expect.reset_index(drop=True))
 
 
@@ -274,12 +171,14 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
 
     # Check that categories match
     if engine == "parquet":
-        cats_expected0 = df["name-cat"].unique().tolist().sort()
-        cats0 = processor.stats["encoders"]["name-cat"]._cats.keys().to_host().sort()
-        assert cats0 == cats_expected0
-    cats_expected1 = df["name-string"].unique().tolist().sort()
-    cats1 = processor.stats["encoders"]["name-string"]._cats.keys().to_host().sort()
-    assert cats1 == cats_expected1
+        cats_expected0 = df["name-cat"].unique().values_to_string()
+        cats0 = processor.stats["encoders"]["name-cat"]._cats.values_to_string()
+        # adding the None entry as a string because of move from gpu
+        assert cats0 == ["None"] + cats_expected0
+    cats_expected1 = df["name-string"].unique().values_to_string()
+    cats1 = processor.stats["encoders"]["name-string"]._cats.values_to_string()
+    # adding the None entry as a string because of move from gpu
+    assert cats1 == ["None"] + cats_expected1
 
     # Write to new "shuffled" and "processed" dataset
     processor.write_to_dataset(

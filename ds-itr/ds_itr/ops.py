@@ -1,5 +1,5 @@
 import warnings
-
+import os
 import numpy as np
 import cudf
 from ds_itr.dl_encoder import DLLabelEncoder
@@ -12,6 +12,16 @@ class Operator:
 
     def describe(self):
         raise NotImplementedError("All operators must have a desription.")
+
+
+class FeatEngOperator(Operator):
+    def apply_op(
+        self, gdf: cudf.DataFrame, cont_names: list, cat_names: list, label_name: list,
+    ):
+        raise NotImplementedError(
+            """The operation to be applied on the data frame chunk, given the required statistics.
+                """
+        )
 
 
 class DFOperator(Operator):
@@ -64,6 +74,58 @@ class StatOperator(Operator):
         raise NotImplementedError(
             """zero and reinitialize all relevant statistical properties"""
         )
+
+
+class MinMax(StatOperator):
+    batch_mins = {}
+    batch_maxs = {}
+    mins = {}
+    maxs = {}
+
+    def read_itr(
+        self, gdf: cudf.DataFrame, cont_names: [], cat_names: [], label_name: []
+    ):
+        """ Iteration level Min Max collection, a chunk at a time
+        """
+        for col in cont_names + cat_names:
+            col_min = min(gdf[col].dropna())
+            col_max = max(gdf[col].dropna())
+            if not col in self.batch_mins:
+                self.batch_mins[col] = []
+                self.batch_maxs[col] = []
+            self.batch_mins[col].append(col_min)
+            self.batch_maxs[col].append(col_max)
+        return
+
+    def read_fin(self):
+
+        for col in self.batch_mins.keys():
+            # required for exporting values later,
+            # must move values from gpu if cupy->numpy not supported
+            self.batch_mins[col] = cudf.Series(self.batch_mins[col]).tolist()
+            self.batch_maxs[col] = cudf.Series(self.batch_maxs[col]).tolist()
+            self.mins[col] = min(self.batch_mins[col])
+            self.maxs[col] = max(self.batch_maxs[col])
+        return
+
+    def registered_stats(self):
+        return ["mins", "maxs", "batch_mins", "batch_maxs"]
+
+    def stats_collected(self):
+        result = [
+            ("mins", self.mins),
+            ("maxs", self.maxs),
+            ("batch_mins", self.batch_mins),
+            ("batch_maxs", self.batch_maxs),
+        ]
+        return result
+
+    def clear(self):
+        self.batch_mins = {}
+        self.batch_maxs = {}
+        self.mins = {}
+        self.maxs = {}
+        return
 
 
 class Moments(StatOperator):
@@ -122,7 +184,7 @@ class Moments(StatOperator):
         result = [
             ("means", self.means),
             ("stds", self.stds),
-            ("vars", self.vars),
+            ("vars", self.varis),
             ("counts", self.counts),
         ]
         return result
@@ -130,7 +192,7 @@ class Moments(StatOperator):
     def clear(self):
         self.counts = {}
         self.means = {}
-        self.vars = {}
+        self.varis = {}
         self.stds = {}
         return
 
@@ -147,8 +209,6 @@ class Median(StatOperator):
     ):
         """ Iteration-level median algorithm.
         """
-        # TODO: Use more-accurate approach.
-        gdf = gdf[cont_names]
         for name in cont_names:
             if name not in self.batch_medians:
                 self.batch_medians[name] = []
@@ -198,18 +258,33 @@ class Encoder(StatOperator):
             return
         for name in cat_names:
             if not name in self.encoders:
-                self.encoders[name] = DLLabelEncoder()
-                self.encoders[name].fit(gdf[name])
-            else:
-                self.encoders[name].update_fit(gdf[name])
+                self.encoders[name] = DLLabelEncoder(name)
+                gdf[name].append([None])
+            self.encoders[name].fit(gdf[name])
         return
 
     def read_fin(self, *args):
         """ Finalize categorical encoders (get categories).
         """
         for name, val in self.encoders.items():
-            self.categories[name] = val._cats.keys()
+            self.categories[name] = self.cat_read_all_files(val)
         return
+
+    def cat_read_all_files(self, cat_obj):
+        cat_size = cat_obj._cats.shape[0]
+        file_paths = (
+            [
+                f"{cat_obj.col}/{x}"
+                for x in os.listdir(cat_obj.col)
+                if x.endswith("parquet")
+            ]
+            if os.path.exists(cat_obj.col)
+            else []
+        )
+        for fi in file_paths:
+            chunk = cudf.read_parquet(fi)
+            cat_size = cat_size + chunk.shape[0]
+        return cat_size
 
     def registered_stats(self):
         return ["encoders", "categories"]
@@ -224,13 +299,51 @@ class Encoder(StatOperator):
         return
 
 
+class Export(FeatEngOperator):
+    def __init__(self, path, nfiles=1, shuffle=True, **kwargs):
+        self.path = path
+        self.nfiles = nfiles
+        self.shuffle = True
+
+    def apply_op(
+        self, gdf: cudf.DataFrame, cont_names: list, cat_names: list, label_name: list,
+    ):
+        writer = DatasetWriter(self.path, nfiles=self.nfiles)
+        writer.write(gdf, shuffle=self.shuffle)
+        writer.write_metadata()
+        return gdf
+
+
+class ZeroFill(FeatEngOperator):
+    def apply_op(
+        self, gdf: cudf.DataFrame, cont_names: list, cat_names: list, label_name: list,
+    ):
+        if not cont_names:
+            return gdf
+        z_gdf = gdf[cont_names].fillna(0)
+        z_gdf[z_gdf < 0] = 0
+        gdf = cudf.concat([gdf[label_name], gdf[cat_names], z_gdf], axis=1)
+        return gdf
+
+
+class LogOp(FeatEngOperator):
+    def apply_op(
+        self, gdf: cudf.DataFrame, cont_names: list, cat_names: list, label_name: list,
+    ):
+        if not cont_names:
+            return gdf
+        new_gdf = np.log(gdf[cont_names].astype(np.float32) + 1)
+        gdf = cudf.concat([gdf[cat_names], gdf[label_name], new_gdf], axis=1)
+        return gdf
+
+
 class Normalize(DFOperator):
     """ Normalize the continuous variables.
     """
 
     @property
     def req_stats(self):
-        return ["means", "stds"]
+        return [Moments()]
 
     def apply_op(
         self,
@@ -242,7 +355,8 @@ class Normalize(DFOperator):
     ):
         if not cont_names or not stats_context["stds"]:
             return gdf
-        return self.apply_mean_std(gdf, stats_context, cont_names)
+        gdf = self.apply_mean_std(gdf, stats_context, cont_names)
+        return gdf
 
     def apply_mean_std(self, gdf, stats_context, cont_names):
         for name in cont_names:
@@ -266,7 +380,7 @@ class FillMissing(DFOperator):
 
     @property
     def req_stats(self):
-        return ["medians"]
+        return [Median()]
 
     def apply_op(
         self,
@@ -277,10 +391,11 @@ class FillMissing(DFOperator):
         label_name: list,
     ):
         if not cont_names or not stats_context["medians"]:
-            return gdf
-        return self.apply_filler(gdf, stats_context, cat_names, cont_names)
+            return gdf, cont_names, cat_names, label_name
+        gdf = self.apply_filler(gdf, stats_context, cont_names)
+        return gdf
 
-    def apply_filler(self, gdf, stats_context, cat_names, cont_names):
+    def apply_filler(self, gdf, stats_context, cont_names):
         na_names = [name for name in cont_names if gdf[name].isna().sum()]
         if self.add_col:
             gdf = self.add_na_indicators(gdf, na_names, cont_names)
@@ -306,7 +421,7 @@ class Categorify(DFOperator):
 
     @property
     def req_stats(self):
-        return ["encoders"]
+        return [Encoder()]
 
     def apply_op(
         self,
@@ -318,8 +433,6 @@ class Categorify(DFOperator):
     ):
         if not cat_names:
             return gdf
-        self.cat_names.extend(cat_names)
-        self.cat_names = list(set(self.cat_names))
         cat_names = [name for name in cat_names if name in gdf.columns]
         for name in cat_names:
             gdf[name] = stats_context["encoders"][name].transform(gdf[name])
@@ -328,8 +441,8 @@ class Categorify(DFOperator):
 
     def get_emb_sz(self, encoders, cat_names):
         work_in = {}
-        for key, val in encoders.items():
-            work_in[key] = len(val._cats.keys()) + 1
+        for key in encoders.keys():
+            work_in[key] = encoders[key] + 1
         ret_list = [(n, self.def_emb_sz(work_in, n)) for n in sorted(cat_names)]
         return ret_list
 

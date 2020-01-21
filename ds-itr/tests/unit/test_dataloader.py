@@ -96,7 +96,7 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,
-        stat_ops=[ops.Moments(), ops.Median(), ops.Encoder()],
+        stat_ops=[ops.MinMax()],
         df_ops=[ops.FillMissing(), ops.Normalize(), ops.Categorify()],
         to_cpu=True,
     )
@@ -131,15 +131,23 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     assert math.isclose(x_median, processor.stats["medians"]["x"], rel_tol=1e1)
     assert math.isclose(y_median, processor.stats["medians"]["y"], rel_tol=1e1)
     assert math.isclose(id_median, processor.stats["medians"]["id"], rel_tol=1e-2)
+    x_min = min(df["x"])
+    y_min = min(df["y"])
+    assert x_min == processor.stats["mins"]["x"]
+    assert y_min == processor.stats["mins"]["y"]
+    x_max = max(df["x"])
+    y_max = max(df["y"])
+    assert x_max == processor.stats["maxs"]["x"]
+    assert y_max == processor.stats["maxs"]["y"]
 
     # Check that categories match
     if engine == "parquet":
-        cats_expected0 = df["name-cat"].unique().tolist().sort()
-        cats0 = processor.stats["encoders"]["name-cat"]._cats.keys().to_host().sort()
-        assert cats0 == cats_expected0
-    cats_expected1 = df["name-string"].unique().tolist().sort()
-    cats1 = processor.stats["encoders"]["name-string"]._cats.keys().to_host().sort()
-    assert cats1 == cats_expected1
+        cats_expected0 = df["name-cat"].unique().values_to_string()
+        cats0 = processor.stats["encoders"]["name-cat"]._cats.values_to_string()
+        assert cats0 == ["None"] + cats_expected0
+    cats_expected1 = df["name-string"].unique().values_to_string()
+    cats1 = processor.stats["encoders"]["name-string"]._cats.values_to_string()
+    assert cats1 == ["None"] + cats_expected1
 
     # Write to new "shuffled" and "processed" dataset
     processor.write_to_dataset(

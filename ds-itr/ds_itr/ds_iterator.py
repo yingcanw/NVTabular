@@ -1,10 +1,6 @@
-import warnings
-
 import cudf
-
 import sys
 import numba
-
 
 #
 # Helper Function definitions
@@ -96,7 +92,6 @@ class PQFileReader(GPUFileReader):
             self.columns,
         ) = cudf.io.read_parquet_metadata(self.file)
         self.file.seek(0)
-
         # Use first row-group metadata to estimate memory-rqs
         # NOTE: We could also use parquet metadata here, but
         #       `total_uncompressed_size` for each column is
@@ -107,12 +102,12 @@ class PQFileReader(GPUFileReader):
             for col in self.reader(self.file, nrows=min(10, self.num_rows))._columns:
                 if col.dtype.name in "object":
                     # Use maximum of first 10 rows
-                    max_size = len(max(cudf.Series(col).dropna())) // 2
+                    target = cudf.Series(col).nans_to_nulls().dropna()
+                    max_size = len(max(target)) // 2
                     self.row_size += int(max_size)
                 else:
                     self.row_size += col.dtype.itemsize
             self.file.seek(0)
-
         # Check if wwe are using row groups
         self.use_row_groups = kwargs.get("use_row_groups", None)
         self.row_group_batch = 1
@@ -154,7 +149,7 @@ class PQFileReader(GPUFileReader):
                 self.next_row_group += 1
                 chunk = cudf.concat([chunk, add_chunk], axis=0) if chunk else add_chunk
                 del add_chunk
-            return chunk
+            return chunk.reset_index(drop=True)
         else:
             batch = min(self.batch_size, self.num_rows - nskip)
             return self.reader(
@@ -186,31 +181,35 @@ class CSVFileReader(GPUFileReader):
         # Use first row to estimate memory-reqs
         names = kwargs.get("names", None)
         dtype = kwargs.get("dtype", None)
+        # default csv delim is ","
+        sep = kwargs.get("sep", ",")
+        self.sep = sep
         self.names = []
         dtype_inf = {}
+        snippet = self.reader(
+            self.file,
+            nrows=min(10, self.num_rows),
+            names=names,
+            header=False,
+            dtype=dtype,
+            sep=sep,
+        )
         if self.num_rows > 0:
-            for i, col in enumerate(
-                self.reader(
-                    self.file,
-                    nrows=min(10, self.num_rows),
-                    names=names,
-                    header=False,
-                    dtype=dtype,
-                )._columns
-            ):
+            for i, col in enumerate(snippet.columns):
                 if names:
                     name = names[i]
                 else:
-                    name = col.name
+                    name = col
                 self.names.append(name)
+            for i, col in enumerate(snippet._columns):
                 if estimate_row_size:
                     if col.dtype == "object":
                         # Use maximum of first 10 rows
-                        max_size = len(max(col)) // 2
+                        max_size = len(max(col.dropna())) // 2
                         self.row_size += int(max_size)
                     else:
                         self.row_size += col.dtype.itemsize
-                dtype_inf[name] = col.dtype
+                dtype_inf[self.names[i]] = col.dtype
         self.dtype = dtype or dtype_inf
 
         # Determine batch size if needed
@@ -223,8 +222,14 @@ class CSVFileReader(GPUFileReader):
     def read_file_batch(self, nskip=0, columns=None, **kwargs):
         batch = min(self.batch_size, self.num_rows - nskip)
         chunk = self.reader(
-            self.file_path, nrows=batch, skiprows=nskip, names=self.names, header=False
+            self.file_path,
+            nrows=batch,
+            skiprows=nskip,
+            names=self.names,
+            header=False,
+            sep=self.sep,
         )
+
         if columns:
             for col in columns:
                 chunk[col] = chunk[col].astype(self.dtype[col])
@@ -249,6 +254,7 @@ class GPUFileIterator:
         dtype=None,
         names=None,
         row_size=None,
+        **kwargs
     ):
         self.file_path = file_path
         self.engine = _get_read_engine(
@@ -260,13 +266,18 @@ class GPUFileIterator:
             dtype=dtype,
             names=names,
             row_size=None,
+            **kwargs
         )
         self.columns = columns
         self.file_size = self.engine.num_rows
         self.rows_processed = 0
+        self.cur_chunk = None
+        self.count = 0
 
     def __iter__(self):
         self.rows_processed = 0
+        self.count = 0
+        self.cur_chunk = None
         return self
 
     def __len__(self):
@@ -274,16 +285,26 @@ class GPUFileIterator:
         return self.file_size // self.engine.batch_size + add_on
 
     def __next__(self):
-
         if self.rows_processed >= self.file_size:
+            if self.cur_chunk:
+                chunk = self.cur_chunk
+                self.cur_chunk = None
+                return chunk
             raise StopIteration
-
-        chunk = self.engine.read_file_batch(
-            nskip=self.rows_processed, columns=self.columns
-        )
-
-        self.rows_processed += len(chunk)
+        self._load_chunk()
+        chunk = self.cur_chunk
+        self.cur_chunk = None
         return chunk
+
+    def _load_chunk(self):
+        # retrieve missing final chunk from fileset,
+        # will fail on last try before stop iteration in __next__
+        if self.rows_processed < self.file_size and not self.cur_chunk:
+            self.cur_chunk = self.engine.read_file_batch(
+                nskip=self.rows_processed, columns=self.columns
+            )
+            self.count = self.count + 1
+            self.rows_processed += self.cur_chunk.shape[0]
 
 
 #
