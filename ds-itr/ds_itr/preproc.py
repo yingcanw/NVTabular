@@ -37,10 +37,18 @@ class Preprocessor:
         self.cat_names = cat_names or []
         self.cont_names = cont_names or []
         self.label_name = label_name or []
+        self.columns_ctx = {}
+        self.columns_ctx['all'] = {} 
+        self.columns_ctx['continuous'] = {}
+        self.columns_ctx['categorical'] = {}
+        self.columns_ctx['all']['base'] = cont_names + cat_names
+        self.columns_ctx['continuous']['base'] = cont_names
+        self.columns_ctx['categorical']['base'] = cat_names
         self.feat_ops = {}
         self.stat_ops = {}
         self.df_ops = {}
         self.stats = {}
+        self.task_sets = {}
         self.to_cpu = to_cpu
         if config:
             self.load_config(config)
@@ -149,44 +157,44 @@ class Preprocessor:
                 
         
     def build_tasks(self, task_dict):
-        none_tasks = []
+        base_tasks = []
         dep_tasks = []
         for cols, task_list in task_dict.items():
             for task in task_list:
                 for op_id, dep_set in task.items():
                     # get op from op_id
-                    target_op = None
-                    for op in all_ops:
-                        if op_id in op._id:
-                            target_op = op
-                            if hasattr(op, 'req_stats'):
-                                self.reg_stat_ops(op.req_stats)
-                            break
-                    if dep_set and target_op:
-                        for dep_grp in dep_set:
-                            dep_cols = None
-                            if dep_grp:
-                                dep_cols = [dep_op.cols_suffix() for dep_op in dep_grp]
-                                target_cols = [f"{col}{dep_cols}" for col in cols]
-                                dep_tasks.append((target_op, target_cols))
-                                break
+                    target_op = all_ops[op_id]
                     if not target_op:
                         warnings.warn(f"""Did not find corresponding op for id: {op_id}. 
                                       If this is a custom operator, check it was properyl
                                       loaded.""")
-                    else:
-                        none_tasks.append((target_op, cols))
-        return none_tasks + dep_tasks
+                        break
+                    if hasattr(target_op, 'req_stats'):
+                        self.reg_stat_ops(target_op.req_stats)
+                    if dep_set:
+                        for dep_grp in dep_set:
+                            if dep_grp:
+                                dep_tasks.append((target_op, cols, dep_grp))
+                            else:
+                                base_tasks.append((target_op, cols, ['base']))
+        return base_tasks + dep_tasks
         
     def update_stats(self, itr):
         """ Gather necessary column statistics in single pass.
         """
-        fe_tasks = self.task_sets.get("FE_tasks", {})
+        fe_tasks = self.task_sets.get("FE", {})
+        pp_tasks = self.task_sets.get("PP", {})
         for gdf in itr:
-            for name, fe_task in fe_tasks.items():
-                feat_op.apply_op(gdf, self.cont_names, self.cat_names, self.label_name)
-            for name, stat_op in self.stat_ops.items():
-                stat_op.read_itr(gdf, self.cont_names, self.cat_names, self.label_name)
+            #put the FE tasks here roll through them
+            for fe_task in fe_tasks:
+                op, cols_grp, target_cols = fe_task
+                gdf = op.apply_op(gdf, self.columns_ctx, cols_grp, target_cols=target_cols)
+            # run the stat ops on the target columns for the parent DF Op in PP tasks list
+            for pp_task in pp_tasks:
+                op, cols_grp, target_cols = pp_task
+                req_ops = op.req_stats
+                for op in req_ops:
+                    self.stat_ops[op._id].apply_op(gdf, self.columns_ctx, cols_grp, target_cols=target_cols)
         for name, stat_op in self.stat_ops.items():
             stat_op.read_fin()
             # missing bubble up to prerprocessor
@@ -233,6 +241,7 @@ class Preprocessor:
             )
 
     def apply_ops(self, gdf):
+        # run the PP ops 
         for name, op in self.df_ops.items():
             gdf = op.apply_op(
                 gdf, self.stats, self.cont_names, self.cat_names, self.label_name

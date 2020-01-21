@@ -320,13 +320,13 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
     config["FE"]["categorical"] = {}
     # add operators with dependencies
     config["FE"]["continuous"] = [{ops.ZeroFill()._id: [[]]},
-                                        {ops.LogOp()._id: [[ops.ZeroFill(),]]}]
+                                  {ops.LogOp()._id: [[ops.ZeroFill()._id]]}]
     config["PP"] = {}
     config["PP"]["all"] = {}
     config["PP"]["continuous"] = {}
     config["PP"]["categorical"] = {}
     config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
-    config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.LogOp()]]}]
+    config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.LogOp()._id]]}]
 
     processor = pp.Preprocessor(
         cat_names=cat_names,
@@ -345,19 +345,29 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
     )
 
     processor.update_stats(data_itr)
+    
+    
     if dump:
         config_file = tmpdir + "/temp.yaml"
         processor.save_stats(config_file)
         processor.clear_stats()
         processor.load_stats(config_file)
 
-    # Check mean and std
-    assert math.isclose(df.x.mean(), processor.stats["means"]["x"], rel_tol=1e-4)
-    assert math.isclose(df.y.mean(), processor.stats["means"]["y"], rel_tol=1e-4)
-    assert math.isclose(df.id.mean(), processor.stats["means"]["id"], rel_tol=1e-4)
-    assert math.isclose(df.x.std(), processor.stats["stds"]["x"], rel_tol=1e-3)
-    assert math.isclose(df.y.std(), processor.stats["stds"]["y"], rel_tol=1e-3)
-    assert math.isclose(df.id.std(), processor.stats["stds"]["id"], rel_tol=1e-3)
+
+    def get_norms(tar: cudf.Series):
+        gdf = tar.fillna(0)
+        gdf = gdf * (gdf>=0).astype("int")
+        gdf = gdf + 1
+        gdf = np.log(gdf)
+        return gdf
+    # Check mean and std - No good right now we have to add all other changes; Zerofill, Log
+    
+    assert math.isclose(get_norms(df.x).mean(), processor.stats["means"]["x_ZeroFill_LogOp"], rel_tol=1e-4)
+    assert math.isclose(get_norms(df.y).mean(), processor.stats["means"]["y_ZeroFill_LogOp"], rel_tol=1e-4)
+    assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_ZeroFill_LogOp"], rel_tol=1e-4)
+    assert math.isclose(get_norms(df.x).std(), processor.stats["stds"]["x_ZeroFill_LogOp"], rel_tol=1e-3)
+    assert math.isclose(get_norms(df.y).std(), processor.stats["stds"]["y_ZeroFill_LogOp"], rel_tol=1e-3)
+    assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_ZeroFill_LogOp"], rel_tol=1e-3)
 
 
     # Check that categories match
