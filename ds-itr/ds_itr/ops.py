@@ -330,10 +330,8 @@ class ZeroFill(TransformOperator):
     def apply_op(
         self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols='base'
     ):
-        import pdb; pdb.set_trace()
         new_key = self._id
         columns_ctx[input_cols][new_key] = []
-        
         cont_names = get_columns(columns_ctx, input_cols, target_cols)
         if not cont_names:
             return gdf

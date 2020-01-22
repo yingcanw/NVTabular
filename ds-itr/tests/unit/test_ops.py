@@ -45,6 +45,7 @@ def test_minmax(tmpdir, datasets, gpu_memory_frac, engine):
         names=allcols_csv,
     )
 
+    import pdb; pdb.set_trace()
     processor = pp.Preprocessor(
         cat_names=cat_names,
         cont_names=cont_names,
@@ -53,9 +54,9 @@ def test_minmax(tmpdir, datasets, gpu_memory_frac, engine):
         df_ops=[],
         to_cpu=False,
     )
-
+    pdb.set_trace()
     processor.update_stats(data_itr)
-
+    pdb.set_trace()
     x_min = min(df["x"])
     y_min = min(df["y"])
     name_min = min(df["name-string"])

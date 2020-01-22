@@ -100,13 +100,14 @@ class DLLabelEncoder(object):
     def fit(self, y: cudf.Series):
         y = _enforce_str(y).reset_index(drop=True)
         if self._cats.empty:
-            self._cats = self.one_cycle(y)
-            return
-        self._cats = self._cats.append(self.one_cycle(y)).unique()
+            self._cats = self.one_cycle(y).unique()
+        else:
+            self._cats = self._cats.append(self.one_cycle(y)).unique()
         # check if enough space to leave in gpu memory if category doubles in size
+        
         if self.series_size(self._cats) > (
             numba.cuda.current_context().get_memory_info()[0] * self.limit_frac
-        ):
+        ) and not self._cats.empty:
             # first time dumping into file
             if not os.path.exists(self.folder_path):
                 os.makedirs(self.folder_path)
