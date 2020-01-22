@@ -149,7 +149,7 @@ class PQFileReader(GPUFileReader):
                 self.next_row_group += 1
                 chunk = cudf.concat([chunk, add_chunk], axis=0) if chunk else add_chunk
                 del add_chunk
-            return chunk
+            return chunk.reset_index(drop=True)
         else:
             batch = min(self.batch_size, self.num_rows - nskip)
             return self.reader(

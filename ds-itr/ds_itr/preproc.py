@@ -215,7 +215,7 @@ class Preprocessor:
         encoders = self.stats.get("encoders", {})
         for name, enc in encoders.items():
             stats_drop["encoders"][name] = (
-                enc.folder_path,
+                enc.file_paths,
                 enc._cats.values_to_string(),
             )
         for name, stat in self.stats.items():
@@ -237,7 +237,7 @@ class Preprocessor:
         encoders = self.stats.get("encoders", {})
         for col, cats in encoders.items():
             self.stats["encoders"][col] = DLLabelEncoder(
-                col, path=cats[0], cats=cudf.Series(cats[1])
+                col, file_paths=cats[0], cats=cudf.Series(cats[1])
             )
 
     def apply_ops(self, gdf):
