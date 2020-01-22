@@ -63,7 +63,7 @@ class DLLabelEncoder(object):
         encoded = None
         if os.path.exists(self.folder_path) and self.file_paths:
             # some cats in memory some in disk
-            file_paths = [os.path.join(self.folder_path, x) for x in os.listdir(self.folder_path) if x.endswith("parquet") and x not in self.file_paths + self.ignore_files
+            file_paths = [os.path.join(self.folder_path, x) for x in os.listdir(self.folder_path) if x.endswith("parquet") and x not in self.file_paths and x not in self.ignore_files
             ]
             self.file_paths.extend(file_paths)
             self.file_paths = list(set(self.file_paths))
@@ -127,10 +127,11 @@ class DLLabelEncoder(object):
         x.to_parquet(self.folder_path)
         self._cats = cudf.Series()
         #should find new file just exported
-        new_file_path = [os.path.join(self.folder_path, x) for x in os.listdir(self.folder_path) if x.endswith("parquet") and x not in self.file_paths + self.ignore_files
+        new_file_path = [os.path.join(self.folder_path, x) for x in os.listdir(self.folder_path) if x.endswith("parquet") and x not in self.file_paths and x not in self.ignore_files
             ]
         # add file to list
         self.file_paths.extend(new_file_path)
+        self.file_paths = list(set(self.file_paths))
         
 
     def one_cycle(self, compr):

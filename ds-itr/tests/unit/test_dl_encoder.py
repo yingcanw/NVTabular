@@ -31,7 +31,7 @@ def test_dl_encoder_fit_transform_ltm(datasets, batch, dskey):
     names = allcols_csv if dskey == "csv-no-header" else None
     df_expect = cudf.read_csv(paths[0], header=False, names=names)[mycols_csv]
     df_expect["id"] = df_expect["id"].astype("int64")
-    data_itr = ds_itr.GPUDatasetIterator(
+    data_itr = ds.GPUDatasetIterator(
         paths[0], batch_size=batch, gpu_memory_frac=2e-8, names=names
     )
     enc = encoder.DLLabelEncoder("name-string", path=str(datasets['cats']), limit_frac=1e-10)
