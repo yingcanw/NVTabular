@@ -13,6 +13,23 @@ except ImportError:
     import numpy as cp
 
 
+def get_new_config():
+    """
+    boiler config object, to be filled in with targeted operator tasks
+    """
+    config = {}
+    config["FE"] = {}
+    config["FE"]["all"] = {}
+    config["FE"]["continuous"] = {}
+    config["FE"]["categorical"] = {}
+    config["PP"] = {}
+    config["PP"]["all"] = {}
+    config["PP"]["continuous"] = {}
+    config["PP"]["categorical"] = {}
+    return config
+    
+    
+    
 def _shuffle_part(gdf):
     sort_key = "__sort_index__"
     arr = cp.arange(len(gdf))
@@ -240,12 +257,24 @@ class Preprocessor:
                 col, file_paths=cats[0], cats=cudf.Series(cats[1])
             )
 
-    def apply_ops(self, gdf):
+    def apply_ops(self, gdf, run_fe=True):
+        """
+        gdf: cudf dataframe
+        run_fe: bool; run feature engineering phase before apply ops
+        Controls the application of registered preprocessing phase op
+        tasks
+        """
         # run the PP ops 
-        for name, op in self.df_ops.items():
-            gdf = op.apply_op(
-                gdf, self.stats, self.cont_names, self.cat_names, self.label_name
-            )
+        fe_tasks = self.task_sets.get("FE", {})
+        pp_tasks = self.task_sets.get("PP", {})
+        if run_fe: 
+            for fe_task in fe_tasks:
+                op, cols_grp, target_cols = fe_task
+                gdf = op.apply_op(gdf, self.columns_ctx, cols_grp, target_cols=target_cols)
+        # run the stat ops on the target columns for the parent DF Op in PP tasks list
+        for pp_task in pp_tasks:
+            op, cols_grp, target_cols = pp_task
+            gdf = op.apply_op(gdf, self.stats, self.columns_ctx, cols_grp, target_cols=target_cols)
         return gdf
 
     def clear_stats(self):

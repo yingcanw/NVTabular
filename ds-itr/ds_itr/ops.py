@@ -368,7 +368,7 @@ class Normalize(DFOperator):
         return [Moments()]
 
     def apply_op(
-        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols='base'
+        self, gdf: cudf.DataFrame, stats_context:dict, columns_ctx: dict, input_cols, target_cols='base'
     ):
         cont_names = get_columns(columns_ctx, input_cols, target_cols)
         new_key = self._id
@@ -407,7 +407,7 @@ class FillMissing(DFOperator):
         return [Median()]
 
     def apply_op(
-        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols='base'
+        self, gdf: cudf.DataFrame, stats_context:dict, columns_ctx: dict, input_cols, target_cols='base'
     ):
         new_key = self._id
         columns_ctx[input_cols][new_key] = []
@@ -448,7 +448,7 @@ class Categorify(DFOperator):
         return [Encoder()]
 
     def apply_op(
-        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols='base'
+        self, gdf: cudf.DataFrame, stats_context:dict, columns_ctx: dict, input_cols, target_cols='base'
     ):
         new_key = self._id
         columns_ctx[input_cols][new_key] = []

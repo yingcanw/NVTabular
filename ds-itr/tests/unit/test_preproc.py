@@ -311,20 +311,11 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
     cont_names = ["x", "y", "id"]
     label_name = ["label"]
     
-    
-    config = {}
-    # first level column list
-    config["FE"] = {}
-    config["FE"]["all"] = {}
-    config["FE"]["continuous"] = {}
-    config["FE"]["categorical"] = {}
+    config = pp.get_new_config()
     # add operators with dependencies
     config["FE"]["continuous"] = [{ops.ZeroFill()._id: [[]]},
                                   {ops.LogOp()._id: [[ops.ZeroFill()._id]]}]
-    config["PP"] = {}
-    config["PP"]["all"] = {}
-    config["PP"]["continuous"] = {}
-    config["PP"]["categorical"] = {}
+
     config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
     config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.LogOp()._id]]}]
 
@@ -369,6 +360,7 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
     assert math.isclose(get_norms(df.y).std(), processor.stats["stds"]["y_ZeroFill_LogOp"], rel_tol=1e-3)
 #     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_ZeroFill_LogOp"], rel_tol=1e-3)
 
+
     # Check that categories match
     if engine == "parquet":
         cats_expected0 = df["name-cat"].unique().values_to_string()
@@ -387,7 +379,6 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
 
     data_itr_2 = ds.GPUDatasetIterator(
         glob.glob(str(tmpdir) + "/ds_part.*.parquet"),
-        columns=columns,
         use_row_groups=True,
         gpu_memory_frac=gpu_memory_frac,
     )
@@ -397,8 +388,8 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
         df_pp = cudf.concat([df_pp, chunk], axis=0) if df_pp else chunk
 
     if engine == "parquet":
-        assert df_pp["name-cat"].dtype == "int64"
-    assert df_pp["name-string"].dtype == "int64"
+        assert df_pp["name-cat_Categorify"].dtype == "int64"
+    assert df_pp["name-string_Categorify"].dtype == "int64"
 
     num_rows, num_row_groups, col_names = cudf.io.read_parquet_metadata(
         str(tmpdir) + "/_metadata"
