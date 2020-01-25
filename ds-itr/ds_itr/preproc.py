@@ -70,14 +70,7 @@ class Preprocessor:
             self.load_config(config)
         else:
             warnings.warn("No Config was loaded, unable to create task list")
-        if feat_ops:
-            self.reg_feat_ops(feat_ops)
-        if stat_ops:
-            self.reg_stat_ops(stat_ops)
-        if df_ops:
-            self.reg_df_ops(df_ops)
-        else:
-            warnings.warn("No DataFrame Operators were loaded")
+
 
         self.clear_stats()
 
@@ -200,12 +193,17 @@ class Preprocessor:
         """
         Attempt to find all ops in ops_list within subrange of phases
         """
+        ops_copy = ops_list.copy()
         for op in ops_list:
             for phase in self.phases[:phase_idx]:
+                if not ops_copy:
+                    break
                 for task in phase:
-                    if op == task[0]:
-                        ops_list.remove(op)
-        if not ops_list:
+                    if not ops_copy:
+                        break
+                    if op._id in task[0]._id:
+                        ops_copy.remove(op)
+        if not ops_copy:
             return True
 
             
@@ -219,7 +217,6 @@ class Preprocessor:
                 if not tup[3]:
                     master_list.remove(tup)
                     nodeps.append(tup)
-        import pdb; pdb.set_trace()
         return nodeps, master_list
                     
     
@@ -259,25 +256,35 @@ class Preprocessor:
                             parents = [] if not hasattr(target_op, 'req_stats') else target_op.req_stats
                             dep_tasks.append((target_op, cols, dep_grp, parents))
         return dep_tasks
+    
+    def update_stats(self, itr, end_phase=None):
+        end = end_phase if end_phase else len(self.phases)
+        for phase in self.phases[:end]:
+            #set parameters for export necessary,
+            # running only stats ops
+            #not running stat_ops < --- may not be necessary may mean running apply_ops
+            self.exec_phase(itr, phase)
         
     # run phase
-    def update_stats(self, itr):
+    def exec_phase(self, itr, tasks):
         """ Gather necessary column statistics in single pass.
         """
-        fe_tasks = self.task_sets.get("FE", {})
-        pp_tasks = self.task_sets.get("PP", {})
+        run_stat_ops = []
         for gdf in itr:
+            import pdb; pdb.set_trace()
             #put the FE tasks here roll through them
-            for fe_task in fe_tasks:
-                op, cols_grp, target_cols = fe_task
-                gdf = op.apply_op(gdf, self.columns_ctx, cols_grp, target_cols=target_cols)
-            # run the stat ops on the target columns for the parent DF Op in PP tasks list
-            for pp_task in pp_tasks:
-                op, cols_grp, target_cols = pp_task
-                req_ops = op.req_stats
-                for op in req_ops:
-                    self.stat_ops[op._id].apply_op(gdf, self.columns_ctx, cols_grp, target_cols="base")
-        for name, stat_op in self.stat_ops.items():
+            for task in tasks:
+                op, cols_grp, target_cols, parents = task
+                if op._id in self.stat_ops:
+                    op = self.stat_ops[op._id]
+                    op.apply_op(gdf, self.columns_ctx, cols_grp, target_cols=target_cols)
+                    run_stat_ops.append(op) if op not in run_stat_ops else None
+                elif op._id in self.feat_ops:
+                    gdf = self.feat_ops[op._id].apply_op(gdf, self.columns_ctx, cols_grp, target_cols=target_cols)
+                elif op._id in self.df_ops:
+                    gdf = self.df_ops[op._id].apply_op(gdf, self.stats, self.columns_ctx, cols_grp, target_cols=target_cols)
+            # if export is activated combine as many GDFs as possible and then write them out cudf.concat([exp_gdf, gdf], axis=0)
+        for stat_op in run_stat_ops:
             stat_op.read_fin()
             # missing bubble up to prerprocessor
         self.get_stats()
@@ -322,24 +329,25 @@ class Preprocessor:
                 col, file_paths=cats[0], cats=cudf.Series(cats[1])
             )
 
-    def apply_ops(self, gdf, run_fe=True):
+    def apply_ops(self, gdf, start_phase=None, end_phase=None, run_fe=True):
         """
         gdf: cudf dataframe
         run_fe: bool; run feature engineering phase before apply ops
         Controls the application of registered preprocessing phase op
         tasks
         """
+        #put phases that you want to run represented in a slice
+        # dont run stat_ops in apply
         # run the PP ops 
-        fe_tasks = self.task_sets.get("FE", {})
-        pp_tasks = self.task_sets.get("PP", {})
-        if run_fe: 
-            for fe_task in fe_tasks:
-                op, cols_grp, target_cols = fe_task
-                gdf = op.apply_op(gdf, self.columns_ctx, cols_grp, target_cols=target_cols)
-        # run the stat ops on the target columns for the parent DF Op in PP tasks list
-        for pp_task in pp_tasks:
-            op, cols_grp, target_cols = pp_task
-            gdf = op.apply_op(gdf, self.stats, self.columns_ctx, cols_grp, target_cols=target_cols)
+        start = start_phase if start_phase else 0
+        end = end_phase if end_phase else len(self.phases)
+        for tasks in self.phases[start:end]:
+            for task in tasks:
+                op, cols_grp, target_cols, parents = task
+                if op._id in self.feat_ops:
+                    gdf = self.feat_ops[op._id].apply_op(gdf, self.columns_ctx, cols_grp, target_cols=target_cols)
+                elif op._id in self.df_ops:
+                    gdf = self.df_ops[op._id].apply_op(gdf, self.columns_ctx, cols_grp, target_cols=target_cols)
         return gdf
 
     def clear_stats(self):

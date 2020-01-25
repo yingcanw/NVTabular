@@ -328,8 +328,8 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
     
     config = pp.get_new_config()
     # add operators with dependencies
-    config["FE"]["continuous"] = [{ops.ZeroFill()._id: [[]]},
-                                  {ops.LogOp()._id: [[ops.ZeroFill()._id]]}]
+    config["FE"]["continuous"] = [{ops.FillMissing()._id: [[]]},
+                                  {ops.LogOp()._id: [[ops.FillMissing()._id]]}]
 
     config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
     config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.LogOp()._id]]}]

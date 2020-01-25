@@ -370,6 +370,7 @@ class Normalize(DFOperator):
     def apply_op(
         self, gdf: cudf.DataFrame, stats_context:dict, columns_ctx: dict, input_cols, target_cols='base'
     ):
+        import pdb; pdb.set_trace()
         cont_names = get_columns(columns_ctx, input_cols, target_cols)
         new_key = self._id
         columns_ctx[input_cols][new_key] = []
@@ -387,8 +388,8 @@ class Normalize(DFOperator):
                 gdf[new_col] = (gdf[name] - stats_context["means"][name]) / (
                     stats_context["stds"][name]
                 )
-            gdf[new_col] = gdf[new_col].astype("float32")
-            new_cols.append(new_col)
+                gdf[new_col] = gdf[new_col].astype("float32")
+                new_cols.append(new_col)
         return gdf, new_cols
 
 
