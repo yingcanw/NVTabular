@@ -179,14 +179,20 @@ class Preprocessor:
         for task in task_list:
             added = False
             cols_needed = task[2].copy()
+            if 'base' in cols_needed:
+                cols_needed.remove('base') 
             for idx, phase in enumerate(self.phases):
-                if not added:
-                    for p_task in phase:
-                        if p_task[0]._id in cols_needed:
-                            cols_needed.remove(p_task[0]._id)
-                            if not cols_needed and self.find_parents(task[3], idx):
-                                added = True
-                                phase.append(task)
+                if added:
+                    break
+                for p_task in phase:
+                    if not cols_needed:
+                        break
+                    if p_task[0]._id in cols_needed:
+                        cols_needed.remove(p_task[0]._id)
+                if not cols_needed and self.find_parents(task[3], idx):
+                    added = True
+                    phase.append(task)
+                        
             if not added:
                 self.phases.append([task])
     
@@ -195,9 +201,9 @@ class Preprocessor:
         Attempt to find all ops in ops_list within subrange of phases
         """
         for op in ops_list:
-            for phase in self.phases[:phase_idx + 1]:
+            for phase in self.phases[:phase_idx]:
                 for task in phase:
-                    if op is task[0]:
+                    if op == task[0]:
                         ops_list.remove(op)
         if not ops_list:
             return True
