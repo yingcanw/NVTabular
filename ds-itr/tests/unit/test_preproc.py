@@ -128,13 +128,17 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         columns = mycols_csv
     cont_names = ["x", "y", "id"]
     label_name = ["label"]
+    
+    config = pp.get_new_config()
+    config["FE"]["continuous"] = [{ops.ZeroFill()._id: [[]]}]
+    config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
+    config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.ZeroFill()._id]]}]
 
     processor = pp.Preprocessor(
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,
-        stat_ops=[ops.Moments(), ops.Median(), ops.Encoder()],
-        df_ops=[ops.FillMissing(), ops.Normalize(), ops.Categorify()],
+        config=config,
         to_cpu=False,
     )
 
@@ -146,6 +150,7 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         names=allcols_csv,
     )
 
+
     processor.update_stats(data_itr)
     if dump:
         config_file = tmpdir + "/temp.yaml"
@@ -153,31 +158,27 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         processor.clear_stats()
         processor.load_stats(config_file)
 
-    # Check mean and std
-    assert math.isclose(df.x.mean(), processor.stats["means"]["x"], rel_tol=1e-4)
-    assert math.isclose(df.y.mean(), processor.stats["means"]["y"], rel_tol=1e-4)
-    assert math.isclose(df.id.mean(), processor.stats["means"]["id"], rel_tol=1e-4)
-    assert math.isclose(df.x.std(), processor.stats["stds"]["x"], rel_tol=1e-3)
-    assert math.isclose(df.y.std(), processor.stats["stds"]["y"], rel_tol=1e-3)
-    assert math.isclose(df.id.std(), processor.stats["stds"]["id"], rel_tol=1e-3)
-
-    # Check median (TODO: Improve the accuracy)
-    x_median = df.x.dropna().quantile(0.5, interpolation="linear")
-    y_median = df.y.dropna().quantile(0.5, interpolation="linear")
-    id_median = df.id.dropna().quantile(0.5, interpolation="linear")
-    assert math.isclose(x_median, processor.stats["medians"]["x"], rel_tol=1e1)
-    assert math.isclose(y_median, processor.stats["medians"]["y"], rel_tol=1e1)
-    assert math.isclose(id_median, processor.stats["medians"]["id"], rel_tol=1e-2)
+    def get_norms(tar: cudf.Series):
+        gdf = tar.fillna(0)
+        gdf = gdf * (gdf>=0).astype("int")
+        return gdf
+   
+    assert math.isclose(get_norms(df.x).mean(), processor.stats["means"]["x_ZeroFill"], rel_tol=1e-4)
+    assert math.isclose(get_norms(df.y).mean(), processor.stats["means"]["y_ZeroFill"], rel_tol=1e-4)
+#     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_ZeroFill_LogOp"], rel_tol=1e-4)
+    assert math.isclose(get_norms(df.x).std(), processor.stats["stds"]["x_ZeroFill"], rel_tol=1e-3)
+    assert math.isclose(get_norms(df.y).std(), processor.stats["stds"]["y_ZeroFill"], rel_tol=1e-3)
+#     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_ZeroFill_LogOp"], rel_tol=1e-3)
 
     # Check that categories match
     if engine == "parquet":
         cats_expected0 = df["name-cat"].unique().values_to_string()
         cats0 = processor.stats["encoders"]["name-cat"]._cats.values_to_string()
-        # adding the None entry as a string because of move from gpu
+        #adding the None entry as a string because of move from gpu
         assert cats0 == ["None"] + cats_expected0
     cats_expected1 = df["name-string"].unique().values_to_string()
     cats1 = processor.stats["encoders"]["name-string"]._cats.values_to_string()
-    # adding the None entry as a string because of move from gpu
+    #adding the None entry as a string because of move from gpu
     assert cats1 == ["None"] + cats_expected1
 
     # Write to new "shuffled" and "processed" dataset
@@ -187,7 +188,6 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
 
     data_itr_2 = ds.GPUDatasetIterator(
         glob.glob(str(tmpdir) + "/ds_part.*.parquet"),
-        columns=columns,
         use_row_groups=True,
         gpu_memory_frac=gpu_memory_frac,
     )
@@ -197,8 +197,8 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         df_pp = cudf.concat([df_pp, chunk], axis=0) if df_pp else chunk
 
     if engine == "parquet":
-        assert df_pp["name-cat"].dtype == "int64"
-    assert df_pp["name-string"].dtype == "int64"
+        assert df_pp["name-cat_Categorify"].dtype == "int64"
+    assert df_pp["name-string_Categorify"].dtype == "int64"
 
     num_rows, num_row_groups, col_names = cudf.io.read_parquet_metadata(
         str(tmpdir) + "/_metadata"
@@ -215,16 +215,30 @@ def test_pq_to_pq_processed(tmpdir, datasets):
     label_name = ["label"]
     chunk_size = 100
 
+    config = pp.get_new_config()
+    config["1"]["continuous"] = [{ops.FillMissing()._id: [[]]}]
+    config["2"]["categorical"] = [{ops.Categorify()._id: [[]]}]
+    config["2"]["continuous"] = [{ops.Normalize()._id: [[ops.FillMissing()._id]]}]
+    
     processor = pp.Preprocessor(
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,
-        stat_ops=[ops.Moments(), ops.Median(), ops.Encoder()],
-        df_ops=[ops.FillMissing(), ops.Normalize(), ops.Categorify()],
+        config=config,
         to_cpu=True,
     )
+    
+    paths = [os.path.join(indir, x) for x in os.listdir(indir) if x.endswith("parquet")
+            ]
 
-    processor.load_stats(sample_stats)
+
+    data_itr = ds.GPUDatasetIterator(
+        paths,
+        use_row_groups=True,
+    )
+    
+    processor.update_stats(data_itr)
+#     processor.load_stats(sample_stats)
     processor.pq_to_pq_processed(
         indir,
         outdir,
@@ -240,7 +254,8 @@ def test_pq_to_pq_processed(tmpdir, datasets):
     assert len(new_paths) == len(old_paths)
 
     meta = cudf.io.read_parquet_metadata(outdir + "/_metadata")
-    assert meta[2] == mycols_pq
+    import pdb; pdb.set_trace()
+    assert mycols_pq in meta[2]
     assert meta[0] // meta[1] <= chunk_size
 
 
@@ -335,6 +350,7 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
         names=allcols_csv,
     )
 
+    import pdb; pdb.set_trace()
     processor.update_stats(data_itr)
     
     

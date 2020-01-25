@@ -50,10 +50,9 @@ class Preprocessor:
         to_cpu=True,
         config=None
     ):
-        self.reg_funcs = {'FE': self.reg_feat_ops, 'PP':self.reg_df_ops}
-        self.cat_names = cat_names or []
-        self.cont_names = cont_names or []
-        self.label_name = label_name or []
+        self.reg_funcs = {StatOperator: self.reg_stat_ops, TransformOperator: self.reg_feat_ops, DFOperator:self.reg_df_ops}
+        self.master_task_list = []
+        self.phases = []
         self.columns_ctx = {}
         self.columns_ctx['all'] = {} 
         self.columns_ctx['continuous'] = {}
@@ -167,14 +166,65 @@ class Preprocessor:
         self.task_sets = {}
         for task_set in config.keys():
             self.task_sets[task_set] = self.build_tasks(config[task_set])
-    
+            self.master_task_list = self.master_task_list + self.task_sets[task_set]
         for t_set, task_list in self.task_sets.items():
             for tup in task_list:
-                self.reg_funcs[t_set]([tup[0]])
-                
+                self.reg_funcs[tup[0].__class__.__base__]([tup[0]])
+        baseline, leftovers = self.sort_task_types(self.master_task_list)
+        self.phases.append(baseline)
+        self.phase_creator(leftovers)
+      
+    
+    def phase_creator(self, task_list):
+        for task in task_list:
+            added = False
+            cols_needed = task[2].copy()
+            for idx, phase in enumerate(self.phases):
+                if not added:
+                    for p_task in phase:
+                        if p_task[0]._id in cols_needed:
+                            cols_needed.remove(p_task[0]._id)
+                            if not cols_needed and self.find_parents(task[3], idx):
+                                added = True
+                                phase.append(task)
+            if not added:
+                self.phases.append([task])
+    
+    def find_parents(self, ops_list, phase_idx):
+        """
+        Attempt to find all ops in ops_list within subrange of phases
+        """
+        for op in ops_list:
+            for phase in self.phases[:phase_idx + 1]:
+                for task in phase:
+                    if op is task[0]:
+                        ops_list.remove(op)
+        if not ops_list:
+            return True
+
+            
+                        
+                        
+    def sort_task_types(self, master_list):
+        nodeps = []
+        for tup in master_list:
+            if 'base' in tup[2]:
+                # base feature with no dependencies
+                if not tup[3]:
+                    master_list.remove(tup)
+                    nodeps.append(tup)
+        import pdb; pdb.set_trace()
+        return nodeps, master_list
+                    
+    
+    
         
-    def build_tasks(self, task_dict):
-        base_tasks = []
+    def build_tasks(self, task_dict : dict):
+        """
+        task_dict: the task dictionary retrieved from the config 
+        Based on input config information 
+        """
+        # task format = (operator, main_columns_class, col_sub_key,  required_operators)
         dep_tasks = []
         for cols, task_list in task_dict.items():
             for task in task_list:
@@ -186,16 +236,25 @@ class Preprocessor:
                                       If this is a custom operator, check it was properyl
                                       loaded.""")
                         break
-                    if hasattr(target_op, 'req_stats'):
-                        self.reg_stat_ops(target_op.req_stats)
                     if dep_set:
                         for dep_grp in dep_set:
-                            if dep_grp:
-                                dep_tasks.append((target_op, cols, dep_grp))
-                            else:
-                                base_tasks.append((target_op, cols, ['base']))
-        return base_tasks + dep_tasks
+                            if hasattr(target_op, 'req_stats'):
+                                self.reg_stat_ops(target_op.req_stats)
+                                for opo in target_op.req_stats:
+                                    # only add if it doesnt already exist
+                                    found = False
+                                    for task_d in dep_tasks:
+                                        if opo is task_d[0] and cols in task_d[1]:
+                                            found = True
+                                    if not found:
+                                        dep_grp = dep_grp if dep_grp else ['base']
+                                        dep_tasks.append((opo, cols, dep_grp, []))
+                            dep_grp = dep_grp if dep_grp else ['base']
+                            parents = [] if not hasattr(target_op, 'req_stats') else target_op.req_stats
+                            dep_tasks.append((target_op, cols, dep_grp, parents))
+        return dep_tasks
         
+    # run phase
     def update_stats(self, itr):
         """ Gather necessary column statistics in single pass.
         """
@@ -211,7 +270,7 @@ class Preprocessor:
                 op, cols_grp, target_cols = pp_task
                 req_ops = op.req_stats
                 for op in req_ops:
-                    self.stat_ops[op._id].apply_op(gdf, self.columns_ctx, cols_grp, target_cols=target_cols)
+                    self.stat_ops[op._id].apply_op(gdf, self.columns_ctx, cols_grp, target_cols="base")
         for name, stat_op in self.stat_ops.items():
             stat_op.read_fin()
             # missing bubble up to prerprocessor
