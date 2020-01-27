@@ -3,7 +3,7 @@ import os
 import numpy as np
 import cudf
 from ds_itr.dl_encoder import DLLabelEncoder
-
+from ds_itr.ds_writer import DatasetWriter
 
 
 def get_columns(cols_ctx, cols_grp, target_cols):
@@ -314,15 +314,15 @@ class Encoder(StatOperator):
 class Export(TransformOperator):
     def __init__(self, path='./ds_export', nfiles=1, shuffle=True, **kwargs):
         self.path = path
+        if not os.path.exists(path):
+            os.makedirs(path)
         self.nfiles = nfiles
         self.shuffle = True
 
     def apply_op(
         self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols='base'
     ):
-        writer = DatasetWriter(self.path, nfiles=self.nfiles)
-        writer.write(gdf, shuffle=self.shuffle)
-        writer.write_metadata()
+        gdf.to_parquet(self.path)
         return gdf
 
 
@@ -370,7 +370,6 @@ class Normalize(DFOperator):
     def apply_op(
         self, gdf: cudf.DataFrame, stats_context:dict, columns_ctx: dict, input_cols, target_cols='base'
     ):
-        import pdb; pdb.set_trace()
         cont_names = get_columns(columns_ctx, input_cols, target_cols)
         new_key = self._id
         columns_ctx[input_cols][new_key] = []

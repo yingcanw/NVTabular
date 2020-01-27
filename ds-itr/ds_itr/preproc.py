@@ -3,6 +3,7 @@ import warnings
 
 import numpy as np
 import cudf
+from ds_itr.ds_iterator import GPUDatasetIterator
 from ds_itr.dl_encoder import DLLabelEncoder
 from ds_itr.ds_writer import DatasetWriter
 from ds_itr.ops import *
@@ -166,11 +167,14 @@ class Preprocessor:
         baseline, leftovers = self.sort_task_types(self.master_task_list)
         self.phases.append(baseline)
         self.phase_creator(leftovers)
+        self.phases_export()
       
     
     def phase_creator(self, task_list):
+        trans_op = False
         for task in task_list:
             added = False
+
             cols_needed = task[2].copy()
             if 'base' in cols_needed:
                 cols_needed.remove('base') 
@@ -188,6 +192,17 @@ class Preprocessor:
                         
             if not added:
                 self.phases.append([task])
+                
+                
+    def phases_export(self):
+        for idx, phase in enumerate(self.phases[:-1]):
+            trans_op = False
+            for task in phase:
+                if isinstance(task[0], TransformOperator):
+                    trans_op = True
+                    break
+            if trans_op:
+                phase.append([Export(path=f"./export_ds/{idx}"),None,[],[]])
     
     def find_parents(self, ops_list, phase_idx):
         """
@@ -263,15 +278,19 @@ class Preprocessor:
             #set parameters for export necessary,
             # running only stats ops
             #not running stat_ops < --- may not be necessary may mean running apply_ops
-            self.exec_phase(itr, phase)
+            new_path = self.exec_phase(itr, phase)
+            import pdb; pdb.set_trace()
+            if new_path:
+                new_files = [os.path.join(new_path, x) for x in os.listdir(new_path) if x.endswith("parquet")]
+                itr = GPUDatasetIterator(new_files, engine="parquet")
         
     # run phase
     def exec_phase(self, itr, tasks):
         """ Gather necessary column statistics in single pass.
         """
+        new_path = None
         run_stat_ops = []
         for gdf in itr:
-            import pdb; pdb.set_trace()
             #put the FE tasks here roll through them
             for task in tasks:
                 op, cols_grp, target_cols, parents = task
@@ -283,11 +302,15 @@ class Preprocessor:
                     gdf = self.feat_ops[op._id].apply_op(gdf, self.columns_ctx, cols_grp, target_cols=target_cols)
                 elif op._id in self.df_ops:
                     gdf = self.df_ops[op._id].apply_op(gdf, self.stats, self.columns_ctx, cols_grp, target_cols=target_cols)
+                elif isinstance(op, Export):
+                    new_path = op.path
+                    op.apply_op(gdf, self.columns_ctx, cols_grp, target_cols=target_cols)
             # if export is activated combine as many GDFs as possible and then write them out cudf.concat([exp_gdf, gdf], axis=0)
         for stat_op in run_stat_ops:
             stat_op.read_fin()
             # missing bubble up to prerprocessor
         self.get_stats()
+        return new_path
 
     def get_stats(self):
         for name, stat_op in self.stat_ops.items():
