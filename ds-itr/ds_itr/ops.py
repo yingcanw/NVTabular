@@ -415,7 +415,7 @@ class FillMissing(DFOperator):
         cont_names = get_columns(columns_ctx, input_cols, target_cols)
         if not cont_names or not stats_context["medians"]:
             return gdf
-        z_gdf = self.apply_filler(gdf, stats_context, cont_names)
+        z_gdf = self.apply_filler(gdf[cont_names], stats_context, cont_names)
         columns_ctx[input_cols][new_key] = list(z_gdf.columns)
         return cudf.concat([gdf, z_gdf], axis=1)
 
@@ -423,10 +423,9 @@ class FillMissing(DFOperator):
         na_names = [name for name in cont_names if gdf[name].isna().sum()]
         if self.add_col:
             gdf = self.add_na_indicators(gdf, na_names, cont_names)
-        z_gdf = gdf[na_names]
         for col in na_names:
-            z_gdf[na_names].fillna(np.float32(stats_context["medians"][col]), inplace=True)
-        z_gdf.columns = [f"{name}_{self._id}" for name in z_gdf.columns]
+            gdf[col] = gdf[col].fillna(np.float32(stats_context["medians"][col]))
+        gdf.columns = [f"{name}_{self._id}" for name in gdf.columns]
         return gdf
 
     def add_na_indicators(self, gdf: cudf.DataFrame, na_names, cat_names):
