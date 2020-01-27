@@ -279,7 +279,6 @@ class Preprocessor:
             # running only stats ops
             #not running stat_ops < --- may not be necessary may mean running apply_ops
             new_path = self.exec_phase(itr, phase)
-            import pdb; pdb.set_trace()
             if new_path:
                 new_files = [os.path.join(new_path, x) for x in os.listdir(new_path) if x.endswith("parquet")]
                 itr = GPUDatasetIterator(new_files, engine="parquet")
@@ -370,7 +369,7 @@ class Preprocessor:
                 if op._id in self.feat_ops:
                     gdf = self.feat_ops[op._id].apply_op(gdf, self.columns_ctx, cols_grp, target_cols=target_cols)
                 elif op._id in self.df_ops:
-                    gdf = self.df_ops[op._id].apply_op(gdf, self.columns_ctx, cols_grp, target_cols=target_cols)
+                    gdf = self.df_ops[op._id].apply_op(gdf, self.stats, self.columns_ctx, cols_grp, target_cols=target_cols)
         return gdf
 
     def clear_stats(self):
