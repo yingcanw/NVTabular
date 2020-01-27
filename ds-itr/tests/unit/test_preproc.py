@@ -350,15 +350,14 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
         names=allcols_csv,
     )
 
-    import pdb; pdb.set_trace()
     processor.update_stats(data_itr)
     
     
-#     if dump:
-#         config_file = tmpdir + "/temp.yaml"
-#         processor.save_stats(config_file)
-#         processor.clear_stats()
-#         processor.load_stats(config_file)
+    if dump:
+        config_file = tmpdir + "/temp.yaml"
+        processor.save_stats(config_file)
+        processor.clear_stats()
+        processor.load_stats(config_file)
 
     def get_norms(tar: cudf.Series):
         ser_median = tar.dropna().quantile(0.5, interpolation="linear")
@@ -369,10 +368,10 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
     
     assert math.isclose(get_norms(df.x).mean(), processor.stats["means"]["x_FillMissing_LogOp"], rel_tol=1e-4)
     assert math.isclose(get_norms(df.y).mean(), processor.stats["means"]["y_FillMissing_LogOp"], rel_tol=1e-4)
-#     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_ZeroFill_LogOp"], rel_tol=1e-4)
+#     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_FillMissing_LogOp"], rel_tol=1e-4)
     assert math.isclose(get_norms(df.x).std(), processor.stats["stds"]["x_FillMissing_LogOp"], rel_tol=1e-3)
     assert math.isclose(get_norms(df.y).std(), processor.stats["stds"]["y_FillMissing_LogOp"], rel_tol=1e-3)
-#     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_ZeroFill_LogOp"], rel_tol=1e-3)
+#     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_FillMissing_LogOp"], rel_tol=1e-3)
 
 
     # Check that categories match

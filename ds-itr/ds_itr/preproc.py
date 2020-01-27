@@ -66,6 +66,7 @@ class Preprocessor:
         self.df_ops = {}
         self.stats = {}
         self.task_sets = {}
+        self.ds_exports = {}
         self.to_cpu = to_cpu
         if config:
             self.load_config(config)
@@ -74,6 +75,12 @@ class Preprocessor:
 
 
         self.clear_stats()
+        
+    
+    def reg_all_ops(self, task_list):
+        for tup in task_list:
+            self.reg_funcs[tup[0].__class__.__base__]([tup[0]])
+    
 
     def reg_feat_ops(self, feat_ops):
         for feat_op in feat_ops:
@@ -161,9 +168,7 @@ class Preprocessor:
         for task_set in config.keys():
             self.task_sets[task_set] = self.build_tasks(config[task_set])
             self.master_task_list = self.master_task_list + self.task_sets[task_set]
-        for t_set, task_list in self.task_sets.items():
-            for tup in task_list:
-                self.reg_funcs[tup[0].__class__.__base__]([tup[0]])
+        self.reg_all_ops(self.master_task_list)
         baseline, leftovers = self.sort_task_types(self.master_task_list)
         self.phases.append(baseline)
         self.phase_creator(leftovers)
@@ -321,6 +326,7 @@ class Preprocessor:
                     warnings.warn("stat not found,", name)
 
     def save_stats(self, path):
+        main_obj = {}
         stats_drop = {}
         stats_drop["encoders"] = {}
         encoders = self.stats.get("encoders", {})
@@ -332,24 +338,31 @@ class Preprocessor:
         for name, stat in self.stats.items():
             if name not in stats_drop.keys():
                 stats_drop[name] = stat
+        main_obj["stats"] = stats_drop
+        main_obj["phases"] = self.phases
+        main_obj["columns_ctx"] = self.columns_ctx
+        main_obj["tasks"] = self.master_task_list
         with open(path, "w") as outfile:
-            yaml.dump(stats_drop, outfile, default_flow_style=False)
+            yaml.dump(main_obj, outfile, default_flow_style=False)
 
     def load_stats(self, path):
         def _set_stats(self, stats_dict):
             for key, stat in stats_dict.items():
                 self.stats[key] = stat
-
-        if isinstance(path, dict):
-            _set_stats(self, path)
-        else:
-            with open(path, "r") as infile:
-                _set_stats(self, yaml.load(infile))
+        
+        with open(path, "r") as infile:
+            main_obj = yaml.load(infile)
+            _set_stats(self, main_obj["stats"])
+            self.master_task_list = main_obj["tasks"]
+            self.column_ctx = main_obj["columns_ctx"]
+            self.phases = main_obj["phases"]
         encoders = self.stats.get("encoders", {})
         for col, cats in encoders.items():
             self.stats["encoders"][col] = DLLabelEncoder(
                 col, file_paths=cats[0], cats=cudf.Series(cats[1])
             )
+        self.reg_all_ops(self.master_task_list)
+        
 
     def apply_ops(self, gdf, start_phase=None, end_phase=None, run_fe=True):
         """
