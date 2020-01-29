@@ -13,6 +13,7 @@ import time
 import math
 import random
 import os
+import shutil
 
 
 @pytest.mark.parametrize("batch", [0, 100, 1000])
@@ -130,9 +131,12 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     label_name = ["label"]
     
     config = pp.get_new_config()
-    config["FE"]["continuous"] = [{ops.ZeroFill()._id: [[]]}]
-    config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
-    config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.ZeroFill()._id]]}]
+    config["FE"]["continuous"] = [ops.ZeroFill()]
+    config["PP"]["continuous"] = [[ops.ZeroFill(), ops.Normalize()]]
+    config["PP"]["categorical"] = [ops.Categorify()]
+#     config["FE"]["continuous"] = [{ops.ZeroFill()._id: [[]]}]
+#     config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
+#     config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.ZeroFill()._id]]}]
 
     processor = pp.Preprocessor(
         cat_names=cat_names,
@@ -162,6 +166,7 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         gdf = tar.fillna(0)
         gdf = gdf * (gdf>=0).astype("int")
         return gdf
+    
    
     assert math.isclose(get_norms(df.x).mean(), processor.stats["means"]["x_ZeroFill"], rel_tol=1e-4)
     assert math.isclose(get_norms(df.y).mean(), processor.stats["means"]["y_ZeroFill"], rel_tol=1e-4)
@@ -204,6 +209,7 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         str(tmpdir) + "/_metadata"
     )
     assert num_rows == len(df_pp)
+    shutil.rmtree(processor.ds_exports)
 
 
 def test_pq_to_pq_processed(tmpdir, datasets):
@@ -216,9 +222,12 @@ def test_pq_to_pq_processed(tmpdir, datasets):
     chunk_size = 100
 
     config = pp.get_new_config()
-    config["1"]["continuous"] = [{ops.FillMissing()._id: [[]]}]
-    config["2"]["categorical"] = [{ops.Categorify()._id: [[]]}]
-    config["2"]["continuous"] = [{ops.Normalize()._id: [[ops.FillMissing()._id]]}]
+    config["FE"]["continuous"] = [[ops.FillMissing(), ops.LogOp()]]
+    config["PP"]["continuous"] = [[ops.LogOp(), ops.Normalize()]]
+    config["PP"]["categorical"] = [ops.Categorify()]
+#     config["FE"]["continuous"] = [{ops.FillMissing()._id: [[]]}]
+#     config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
+#     config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.FillMissing()._id]]}]
     
     processor = pp.Preprocessor(
         cat_names=cat_names,
@@ -254,9 +263,9 @@ def test_pq_to_pq_processed(tmpdir, datasets):
     assert len(new_paths) == len(old_paths)
 
     meta = cudf.io.read_parquet_metadata(outdir + "/_metadata")
-    import pdb; pdb.set_trace()
-    assert mycols_pq in meta[2]
+    assert all(x in meta[2] for x in mycols_pq)
     assert meta[0] // meta[1] <= chunk_size
+    shutil.rmtree(processor.ds_exports)
 
 
 def test_estimated_row_size(tmpdir):
@@ -299,6 +308,7 @@ def test_estimated_row_size(tmpdir):
     )
     estimated_row_size_csv = reader_csv.estimated_row_size
     assert estimated_row_size_csv == read_byte_size
+    
 
     
     
@@ -328,11 +338,17 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
     
     config = pp.get_new_config()
     # add operators with dependencies
-    config["FE"]["continuous"] = [{ops.FillMissing()._id: [[]]},
-                                  {ops.LogOp()._id: [[ops.FillMissing()._id]]}]
+    config["FE"]["continuous"] = [[ops.FillMissing(), ops.LogOp()]]
+    config["PP"]["continuous"] = [[ops.LogOp(), ops.Normalize()]]
+    config["PP"]["categorical"] = [ops.Categorify()]
+#     config["FE"]["continuous"] = [{ops.Bucketize()._id: [[]]},
+#                                     {ops.FillMissing()._id: [[]]},
+#                                   {ops.LogOp()._id: [[ops.FillMissing()._id]]}]
 
-    config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
-    config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.LogOp()._id]]}]
+#     # preprocessing happens to all available columns 
+#     config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
+#     config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.LogOp()._id]]}]
+    
 
     processor = pp.Preprocessor(
         cat_names=cat_names,
@@ -408,3 +424,5 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
         str(tmpdir) + "/_metadata"
     )
     assert num_rows == len(df_pp)
+    shutil.rmtree(processor.ds_exports)
+    

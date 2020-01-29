@@ -12,6 +12,7 @@ import time
 import math
 import random
 import os
+import shutil
 
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
@@ -45,18 +46,19 @@ def test_minmax(tmpdir, datasets, gpu_memory_frac, engine):
         names=allcols_csv,
     )
 
-    import pdb; pdb.set_trace()
+    config = pp.get_new_config()
+    config["PP"]["continuous"] = [ops.MinMax()]
+    
     processor = pp.Preprocessor(
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,
-        stat_ops=[ops.MinMax()],
-        df_ops=[],
+        config=config,
         to_cpu=False,
     )
-    pdb.set_trace()
+
     processor.update_stats(data_itr)
-    pdb.set_trace()
+
     x_min = min(df["x"])
     y_min = min(df["y"])
     name_min = min(df["name-string"])
@@ -69,6 +71,7 @@ def test_minmax(tmpdir, datasets, gpu_memory_frac, engine):
     assert x_max == processor.stats["maxs"]["x"]
     assert y_max == processor.stats["maxs"]["y"]
     assert name_max == processor.stats["maxs"]["name-string"]
+    shutil.rmtree(processor.ds_exports)
 
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
@@ -102,12 +105,14 @@ def test_moments(tmpdir, datasets, gpu_memory_frac, engine):
         names=allcols_csv,
     )
 
+    config = pp.get_new_config()
+    config["PP"]["continuous"] = [ops.Moments()]
+    
     processor = pp.Preprocessor(
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,
-        stat_ops=[ops.Moments()],
-        df_ops=[],
+        config=config,
         to_cpu=False,
     )
 
@@ -120,6 +125,7 @@ def test_moments(tmpdir, datasets, gpu_memory_frac, engine):
     assert math.isclose(df.x.std(), processor.stats["stds"]["x"], rel_tol=1e-3)
     assert math.isclose(df.y.std(), processor.stats["stds"]["y"], rel_tol=1e-3)
     assert math.isclose(df.id.std(), processor.stats["stds"]["id"], rel_tol=1e-3)
+    shutil.rmtree(processor.ds_exports)
 
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
@@ -152,13 +158,15 @@ def test_encoder(tmpdir, datasets, gpu_memory_frac, engine):
         gpu_memory_frac=gpu_memory_frac,
         names=allcols_csv,
     )
+    
+    config = pp.get_new_config()
+    config["PP"]["continuous"] = [ops.Encoder()]
 
     processor = pp.Preprocessor(
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,
-        stat_ops=[ops.Encoder()],
-        df_ops=[],
+        config=config,
         to_cpu=False,
     )
 
@@ -172,6 +180,7 @@ def test_encoder(tmpdir, datasets, gpu_memory_frac, engine):
     cats_expected1 = df["name-string"].unique().values_to_string()
     cats1 = processor.stats["encoders"]["name-string"]._cats.values_to_string()
     assert cats1 == ["None"] + cats_expected1
+    shutil.rmtree(processor.ds_exports)
 
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
@@ -204,13 +213,15 @@ def test_median(tmpdir, datasets, gpu_memory_frac, engine):
         gpu_memory_frac=gpu_memory_frac,
         names=allcols_csv,
     )
+    
+    config = pp.get_new_config()
+    config["PP"]["continuous"] = [ops.Median()]
 
     processor = pp.Preprocessor(
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,
-        stat_ops=[ops.Median()],
-        df_ops=[],
+        config=config,
         to_cpu=False,
     )
 
@@ -223,6 +234,7 @@ def test_median(tmpdir, datasets, gpu_memory_frac, engine):
     assert math.isclose(x_median, processor.stats["medians"]["x"], rel_tol=1e1)
     assert math.isclose(y_median, processor.stats["medians"]["y"], rel_tol=1e1)
     assert math.isclose(id_median, processor.stats["medians"]["id"], rel_tol=1e-2)
+    shutil.rmtree(processor.ds_exports)
 
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])

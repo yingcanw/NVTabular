@@ -8,6 +8,7 @@ import ds_itr.batchloader as bl
 import pytest
 import torch
 from tests.fixtures import *
+import shutil
 
 
 @pytest.mark.parametrize("batch", [0, 100, 1000])
@@ -91,13 +92,17 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         columns = mycols_csv
     cont_names = ["x", "y", "id"]
     label_name = ["label"]
+    
+    config = pp.get_new_config()
+    config["FE"]["continuous"] = [ops.MinMax()]
+    config["PP"]["continuous"] = [[ops.FillMissing(), ops.Normalize()]]
+    config["PP"]["categorical"] = [ops.Categorify()]
 
     processor = pp.Preprocessor(
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,
-        stat_ops=[ops.MinMax()],
-        df_ops=[ops.FillMissing(), ops.Normalize(), ops.Categorify()],
+        config=config,
         to_cpu=True,
     )
 
@@ -123,6 +128,7 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     assert math.isclose(df.x.std(), processor.stats["stds"]["x"], rel_tol=1e-3)
     assert math.isclose(df.y.std(), processor.stats["stds"]["y"], rel_tol=1e-3)
     assert math.isclose(df.id.std(), processor.stats["stds"]["id"], rel_tol=1e-3)
+    
 
     # Check median (TODO: Improve the accuracy)
     x_median = df.x.dropna().quantile(0.5, interpolation="linear")
@@ -197,3 +203,4 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         assert data_gd[0][1].shape[1] > 0
 
     assert len_df_pp == count_tens_itr
+    shutil.rmtree(processor.ds_exports)

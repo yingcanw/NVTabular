@@ -49,7 +49,8 @@ class Preprocessor:
         stat_ops=None,
         df_ops=None,
         to_cpu=True,
-        config=None
+        config=None,
+        export_path="./ds_export"
     ):
         self.reg_funcs = {StatOperator: self.reg_stat_ops, TransformOperator: self.reg_feat_ops, DFOperator:self.reg_df_ops}
         self.master_task_list = []
@@ -66,7 +67,7 @@ class Preprocessor:
         self.df_ops = {}
         self.stats = {}
         self.task_sets = {}
-        self.ds_exports = {}
+        self.ds_exports = export_path
         self.to_cpu = to_cpu
         if config:
             self.load_config(config)
@@ -162,18 +163,32 @@ class Preprocessor:
         )
 
 
-    def load_config(self, config):
+    def load_config(self, config, pro=False):
         # separate FE and PP
+        
+        if not pro:
+            config = self.compile_dict_from_list(config)
         self.task_sets = {}
         for task_set in config.keys():
             self.task_sets[task_set] = self.build_tasks(config[task_set])
             self.master_task_list = self.master_task_list + self.task_sets[task_set]
+        self.remove_dupes()
+        
         self.reg_all_ops(self.master_task_list)
         baseline, leftovers = self.sort_task_types(self.master_task_list)
         self.phases.append(baseline)
         self.phase_creator(leftovers)
         self.phases_export()
-      
+     
+    
+    def remove_dupes(self):
+        for idx, ptask in enumerate(self.master_task_list):
+            for sdx, stask in enumerate(self.master_task_list):
+                #if you find it again later in the list remove it
+                if ptask[0] == stask[0] and ptask[1] in stask[1] and not sdx == idx:
+                    self.master_task_list.remove(stask)
+    
+    
     
     def phase_creator(self, task_list):
         trans_op = False
@@ -207,7 +222,8 @@ class Preprocessor:
                     trans_op = True
                     break
             if trans_op:
-                phase.append([Export(path=f"./export_ds/{idx}"),None,[],[]])
+                tar_path = os.path.join(self.ds_exports, str(idx))
+                phase.append([Export(path=f"{tar_path}"),None,[],[]])
     
     def find_parents(self, ops_list, phase_idx):
         """
@@ -238,8 +254,40 @@ class Preprocessor:
                     master_list.remove(tup)
                     nodeps.append(tup)
         return nodeps, master_list
-                    
+
     
+    
+    def compile_dict_from_list(self, task_list_dict):
+        tk_d = {}
+        phases = 0
+        for phase, task_list in task_list_dict.items():
+            tk_d[phase] = {}
+            for k, v in task_list.items():
+                tk_d[phase][k] = self.extract_tasks_dict(v)
+            #increment at end for next if exists
+            phases = phases + 1
+        return tk_d
+                
+        
+    
+    
+    def extract_tasks_dict(self, task_list):
+        # contains a list of lists [[fillmissing, Logop]], Normalize, Categorify]
+        task_dicts = []
+        for obj in task_list:
+            if isinstance(obj, list):
+                for idx, op in enumerate(obj):
+                    if idx > 0:
+                        to_add = {op._id: [[obj[idx - 1]._id]]}
+                    else:
+                        to_add = {op._id: [[]]}
+                    task_dicts.append(to_add)
+            else:
+                to_add = {obj._id: [[]]}
+                task_dicts.append(to_add)
+        return task_dicts
+                
+        
     
         
     def build_tasks(self, task_dict : dict):
