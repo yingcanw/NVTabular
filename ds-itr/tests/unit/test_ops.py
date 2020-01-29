@@ -47,7 +47,7 @@ def test_minmax(tmpdir, datasets, gpu_memory_frac, engine):
     )
 
     config = pp.get_new_config()
-    config["PP"]["continuous"] = [ops.MinMax()]
+    config["PP"]["all"] = [ops.MinMax()]
     
     processor = pp.Preprocessor(
         cat_names=cat_names,
@@ -71,7 +71,8 @@ def test_minmax(tmpdir, datasets, gpu_memory_frac, engine):
     assert x_max == processor.stats["maxs"]["x"]
     assert y_max == processor.stats["maxs"]["y"]
     assert name_max == processor.stats["maxs"]["name-string"]
-    shutil.rmtree(processor.ds_exports)
+    if os.path.exists(processor.ds_exports):
+        shutil.rmtree(processor.ds_exports)
 
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
@@ -125,7 +126,8 @@ def test_moments(tmpdir, datasets, gpu_memory_frac, engine):
     assert math.isclose(df.x.std(), processor.stats["stds"]["x"], rel_tol=1e-3)
     assert math.isclose(df.y.std(), processor.stats["stds"]["y"], rel_tol=1e-3)
     assert math.isclose(df.id.std(), processor.stats["stds"]["id"], rel_tol=1e-3)
-    shutil.rmtree(processor.ds_exports)
+    if os.path.exists(processor.ds_exports):
+        shutil.rmtree(processor.ds_exports)
 
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
@@ -160,7 +162,7 @@ def test_encoder(tmpdir, datasets, gpu_memory_frac, engine):
     )
     
     config = pp.get_new_config()
-    config["PP"]["continuous"] = [ops.Encoder()]
+    config["PP"]["categorical"] = [ops.Encoder()]
 
     processor = pp.Preprocessor(
         cat_names=cat_names,
@@ -180,7 +182,8 @@ def test_encoder(tmpdir, datasets, gpu_memory_frac, engine):
     cats_expected1 = df["name-string"].unique().values_to_string()
     cats1 = processor.stats["encoders"]["name-string"]._cats.values_to_string()
     assert cats1 == ["None"] + cats_expected1
-    shutil.rmtree(processor.ds_exports)
+    if os.path.exists(processor.ds_exports):
+        shutil.rmtree(processor.ds_exports)
 
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
@@ -234,7 +237,8 @@ def test_median(tmpdir, datasets, gpu_memory_frac, engine):
     assert math.isclose(x_median, processor.stats["medians"]["x"], rel_tol=1e1)
     assert math.isclose(y_median, processor.stats["medians"]["y"], rel_tol=1e1)
     assert math.isclose(id_median, processor.stats["medians"]["id"], rel_tol=1e-2)
-    shutil.rmtree(processor.ds_exports)
+    if os.path.exists(processor.ds_exports):
+        shutil.rmtree(processor.ds_exports)
 
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
@@ -269,7 +273,12 @@ def test_log(tmpdir, datasets, gpu_memory_frac, engine):
     )
 
     log_op = ops.LogOp()
+    
+    columns_ctx = {}
+    columns_ctx['continuous'] = {}
+    columns_ctx['continuous']['base'] = cont_names
+    
 
     for gdf in data_itr:
-        new_gdf = log_op.apply_op(gdf, cat_names, cont_names, label_name)
+        new_gdf = log_op.apply_op(gdf, columns_ctx, 'continuous')
         assert new_gdf[cont_names] == np.log(gdf[cont_names].astype(np.float32))
