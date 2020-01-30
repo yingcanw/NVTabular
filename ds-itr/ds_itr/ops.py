@@ -149,7 +149,7 @@ class Moments(StatOperator):
     ):
         """ Iteration-level moment algorithm (mean/std).
         """
-        cols = get_columns(columns_ctx, input_cols, target_cols)
+        cols = get_columns(columns_ctx, input_cols, target_cols) 
         for col in cols:
             if col not in self.counts:
                 self.counts[col] = 0.0

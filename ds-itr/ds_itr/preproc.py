@@ -59,9 +59,11 @@ class Preprocessor:
         self.columns_ctx['all'] = {} 
         self.columns_ctx['continuous'] = {}
         self.columns_ctx['categorical'] = {}
-        self.columns_ctx['all']['base'] = cont_names + cat_names
+        self.columns_ctx['label'] = {}
+        self.columns_ctx['all']['base'] = cont_names + cat_names + label_name
         self.columns_ctx['continuous']['base'] = cont_names
         self.columns_ctx['categorical']['base'] = cat_names
+        self.columns_ctx['label']['base'] = label_name
         self.feat_ops = {}
         self.stat_ops = {}
         self.df_ops = {}
@@ -165,7 +167,6 @@ class Preprocessor:
 
     def load_config(self, config, pro=False):
         # separate FE and PP
-        
         if not pro:
             config = self.compile_dict_from_list(config)
         self.task_sets = {}
@@ -179,6 +180,7 @@ class Preprocessor:
         self.phases.append(baseline)
         self.phase_creator(leftovers)
         self.phases_export()
+        self.create_final_col_refs()
      
     
     def remove_dupes(self):
@@ -286,8 +288,46 @@ class Preprocessor:
                 to_add = {obj._id: [[]]}
                 task_dicts.append(to_add)
         return task_dicts
-                
+
+
+    def create_final_col_refs(self):
         
+        if "final" in self.columns_ctx.keys():
+            return
+#         self.columns_ctx['final'] = {}
+        final = {}
+        for task in self.task_sets['PP']:
+            if not task[1] in final.keys():
+                final[task[1]] = []
+            for x in final[task[1]]:
+                if x in task[2]: 
+                    final[task[1]].remove(x)
+            if not task[0].__class__.__base__ == StatOperator:
+                final[task[1]].append(task[0]._id)
+        #add labels too
+        final['label'] = []
+        for p_set, col_ctx in self.columns_ctx['label'].items():
+            if not final['label']:
+                final['label']= col_ctx
+            else:
+                final['label'] = final['label'] + col_ctx
+        self.columns_ctx['final'] = {}
+        self.columns_ctx['final']['ctx']= final
+            
+   
+    def create_final_cols(self):
+        #still adding double need to stop that
+        final_ctx = {}
+        for key, ctx_list in self.columns_ctx['final']['ctx'].items():
+            to_add = None
+            for ctx in ctx_list:
+                if not ctx in self.columns_ctx[key].keys():
+                    ctx = 'base'
+                to_add = self.columns_ctx[key][ctx] if not to_add else to_add + self.columns_ctx[key][ctx]
+            if not key in final_ctx.keys():
+                final_ctx[key] = to_add
+            final_ctx[key] = final_ctx[key] + to_add
+        self.columns_ctx['final']['cols'] = final_ctx
     
         
     def build_tasks(self, task_dict : dict):
@@ -468,11 +508,16 @@ class Preprocessor:
                         gdf, self.cont_names, self.cat_names, self.label_name
                     )
                 gdf = self.apply_ops(gdf)
+                
+            cat_names = self.columns_ctx['final']['cols']['categorical']
+            cont_names = self.columns_ctx['final']['cols']['continuous']
+            label_name = self.columns_ctx['final']['cols']['label']
 
             gdf_cats, gdf_conts, gdf_label = (
-                gdf[self.cat_names],
-                gdf[self.cont_names],
-                gdf[self.label_name],
+                
+                gdf[cat_names],
+                gdf[cont_names],
+                gdf[label_name],
             )
             del gdf
 

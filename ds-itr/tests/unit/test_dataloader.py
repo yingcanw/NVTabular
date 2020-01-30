@@ -164,6 +164,8 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     processor.write_to_dataset(
         tmpdir, data_itr, nfiles=10, shuffle=True, apply_ops=True
     )
+    processor.create_final_cols()
+
     dlc = bl.DLCollator(preproc=processor)
     data_files = [
         bl.FileItrDataset(
@@ -175,6 +177,7 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         )
         for x in glob.glob(str(tmpdir) + "/ds_part.*.parquet")
     ]
+    
     data_itr = torch.utils.data.ChainDataset(data_files)
     dl = bl.DLDataLoader(
         data_itr, collate_fn=dlc.gdf_col, pin_memory=False, num_workers=0

@@ -82,14 +82,12 @@ class TensorItr:
         self.tensors = [tensor[idx] for tensor in self.tensors]
 
 
-def create_tensors(
-    gdf, preproc=None, cat_names=None, cont_names=None, label_name=None, to_cpu=False
-):
+def create_tensors(gdf, preproc, cat_names, cont_names, label_name, to_cpu=False):
     # insert preprocessor
     # transform cats here
     gdf = gdf[0]
     if preproc:
-        preproc.apply_ops(gdf)
+        gdf = preproc.apply_ops(gdf)
     gdf_cats, gdf_conts, gdf_label = gdf[cat_names], gdf[cont_names], gdf[label_name]
     del gdf
     cats, conts, label = {}, {}, {}
@@ -138,26 +136,26 @@ class DLCollator:
         preproc=None,
         cat_names=None,
         cont_names=None,
-        label_name=None,
+        label_name=None
     ):
         self.transform = transform
         self.preproc = preproc
         if self.preproc:
-            self.cat_names = self.preproc.cat_names
-            self.cont_names = self.preproc.cont_names
-            self.label_name = self.preproc.label_name
+            self.cat_names = self.preproc.columns_ctx['final']['cols']['categorical']
+            self.cont_names = self.preproc.columns_ctx['final']['cols']['continuous']
+            self.label_name = self.preproc.columns_ctx['final']['cols']['label']
         else:
-            self.cat_names = cat_names
-            self.cont_names = cont_names
-            self.label_name = label_name
+            self.cat_names = cat_names if cat_names else []
+            self.cont_names = cont_names if cont_names else []
+            self.label_name = label_name if label_name else []
 
     def gdf_col(self, gdf):
         batch = self.transform(
             gdf,
-            preproc=self.preproc,
-            cat_names=self.cat_names,
-            cont_names=self.cont_names,
-            label_name=self.label_name,
+            self.preproc,
+            self.cat_names,
+            self.cont_names,
+            self.label_name,
         )
         return (batch[0], batch[1]), batch[2].long()
 
