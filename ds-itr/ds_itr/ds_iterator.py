@@ -1,6 +1,9 @@
 import cudf
 import sys
 import numba
+import os
+import random
+import numpy as np
 import pyarrow.parquet as pq
 
 #
@@ -101,13 +104,13 @@ class PQFileReader(GPUFileReader):
         self.row_size = self.row_size or 0
         if self.num_rows > 0 and self.row_size == 0:
             for col in self.reader(self.file, nrows=min(10, self.num_rows))._columns:
-                if col.dtype.name in "object":
-                    # Use maximum of first 10 rows
-                    target = cudf.Series(col).nans_to_nulls().dropna()
-                    max_size = len(max(target)) // 2
-                    self.row_size += int(max_size)
-                else:
-                    self.row_size += col.dtype.itemsize
+#                 if col.dtype.name in "object":
+#                     # Use maximum of first 10 rows
+#                     target = cudf.Series(col).nans_to_nulls().dropna()
+#                     max_size = len(max(target)) // 2
+#                     self.row_size += int(max_size)
+#                 else:
+                self.row_size += col.dtype.itemsize
             self.file.seek(0)
         # Check if wwe are using row groups
         self.use_row_groups = kwargs.get("use_row_groups", None)
@@ -351,23 +354,32 @@ class GPUDatasetIterator:
 
 class Shuffler():
     def __init__(self, tar_dir, num_out_files):
-        self.tar_dir = self.tar_dir
-        self.pq_files = [x for x in os.listdir(tar_dir) if x.endswith("parquet") ]
+        self.tar_dir = tar_dir
+        self.pq_files = [os.path.join(tar_dir, x) for x in os.listdir(tar_dir)]
         # shuffle list for fun
-        self.starter_row =  cudf.read_parquet(pq_files[0], num_rows=1).to_arrow()
+        self.starter_row =  cudf.read_parquet(self.pq_files[0], num_rows=1)
+        self.row_size = 0
+        for col in self.starter_row.columns:
+            self.row_size += self.starter_row[col].dtype.itemsize
+        self.starter_row = self.starter_row.to_arrow()
         self.disired_file_count = num_out_files 
-        os.random.shuffle(self.pq_files)
-        files_chunks = len(self.pq_files)/num_out_files
+        random.shuffle(self.pq_files)
+        chunk_size = len(self.pq_files)//num_out_files
+        if len(self.pq_files) % num_out_files > 0:
+            chunk_size = chunk_size + 1
+        files_chunks = len(self.pq_files)//chunk_size
+        if len(self.pq_files) % chunk_size > 0:
+            files_chunks = files_chunks + 1
         self.file_sets = []
         for x in range(0, files_chunks):
-            start = x * files_chunks
-            end = start + files_chunks
-            self.file_sets.append(pq_files[start:end])
+            start = x * chunk_size
+            end = start + chunk_size
+            self.file_sets.append(self.pq_files[start:end])
         #need to remove fil
         #write each file in sublist to same file
         
         
-    def shuffle(self, tar_dir)
+    def shuffle(self, tar_dir):
         """
         tar_dir: path or string; output location of dataset to shuffle
         Control method for managing the shuffling of a dataset
@@ -383,6 +395,8 @@ class Shuffler():
         created before this call. 
         """
         fin_dir = os.path.join(tar_dir,"shuffled_fin")
+        if not os.path.exists(fin_dir):
+            os.makedirs(fin_dir)
         final_files = []
         for idx, file in enumerate(interim_files):
             fn = os.path.join(fin_dir, f"shuffled_{idx}.parquet")
@@ -399,19 +413,19 @@ class Shuffler():
         collates them together to form larger shuffled files
         """
         interim_dir = os.path.join(tar_dir,"shuffled_inter")
+        if not os.path.exists(interim_dir):
+                os.makedirs(interim_dir)
         interim_files = []
         for idx, chunkset in enumerate(file_sets):
             data_itr = GPUDatasetIterator(chunkset, engine="parquet")
             fn = os.path.join(interim_dir, f"shuffled_{idx}.parquet")
             interim_files.append(fn)
-            if not os.path.exists(fn):
-                os.mkdirs(fn)
             writer = pq.ParquetWriter(
                     fn, self.starter_row.schema
                 )
             
             for chunk in data_itr:
-                writer.write(chunk.to_arrow())
+                writer.write_table(chunk.to_arrow())
             writer.close()
             writer = None
         return interim_files
@@ -432,35 +446,40 @@ class Shuffler():
             bags.append(cudf.DataFrame())
         # create GPUDataset Iterator for file
         data_itr = GPUDatasetIterator(in_file, engine="parquet") 
-        max_size = _allowable_batch_size(mem_limit, data_itr.engine.row_size)
-        row_schema = cudf.read_parquet(infile, num_rows=1)
-        writer = pq.ParquetWriter(
-                    out_file, row_schema.schema
-                )
+        max_size = _allowable_batch_size(mem_limit, self.row_size)
+        writer = None
         for chunk in data_itr:
-            chunk_size = chunk.size[0] / num_bags
+            chunk_size = chunk.shape[0] / num_bags
             #split can be done with apply_chunk
             #split into bags
             for x in range(0, num_bags):
                 # add slice to chosen bag
                 start = x * chunk_size
                 end = start + chunk_size
-                chk_slice = chunk.iloc[start:end]
-                selected_bag = os.random.choice(bags)
-                cudf.concat([selected_bag, chk_slice], axis=0)
+                chk_slice = chunk.iloc[int(start):int(end)]
+                b_idx = np.random.randint(0, len(bags))
+                if bags[b_idx].empty:
+                    bags[b_idx] = chk_slice
+                else:
+                    bags[b_idx] = cudf.concat([bags[b_idx], chk_slice], axis=0, ignore_index=True)
                 # check all bag sizes
-                if selected_bag.size[0] >= max_size:
+                if bags[b_idx].shape[0] >= max_size:
                     # when size gets to a certain percentage dump to file using writer
-                    writer.write(bag.to_arrow())
+                    bag_table = bags[b_idx].to_arrow()
+                    if not writer:
+                        writer = pq.ParquetWriter(out_file, bag_table.schema)
+                    writer.write_table(bag_table)
                     # clear bag after write to file
                     bag = cudf.DataFrame()
                 
         for bag in bags:
             if not bag.empty:
-                writer.write(bag.to_arrow())
+                table_bg = bag.to_arrow()
+                if not writer:
+                    writer = pq.ParquetWriter(out_file, table_bg.schema)
+                writer.write_table(table_bg)
             # clear the dataframe
-            bag = None
         # Done writing, clear the writer
-        writer.close()
-        writer = None
+        if writer:
+            writer.close()
             
