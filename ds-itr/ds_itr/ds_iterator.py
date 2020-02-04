@@ -353,16 +353,18 @@ class GPUDatasetIterator:
                 
 
 class Shuffler():
-    def __init__(self, tar_dir, num_out_files):
+    def __init__(self, tar_dir, num_out_files, **kwargs):
+        self.kwargs = kwargs
         self.tar_dir = tar_dir
         self.pq_files = [os.path.join(tar_dir, x) for x in os.listdir(tar_dir)]
+        ds_itr = GPUDatasetIterator(self.pq_files, **kwargs)
+        chunk = next(iter(ds_itr))
+        self.row_size = ds_itr.itr.engine.row_size
+#         for col in self.starter_row.columns:
+#             self.row_size += self.starter_row[col].dtype.itemsize
+#         self.starter_row = self.starter_row.to_arrow()
+#         self.disired_file_count = num_out_files 
         # shuffle list for fun
-        self.starter_row =  cudf.read_parquet(self.pq_files[0], num_rows=1)
-        self.row_size = 0
-        for col in self.starter_row.columns:
-            self.row_size += self.starter_row[col].dtype.itemsize
-        self.starter_row = self.starter_row.to_arrow()
-        self.disired_file_count = num_out_files 
         random.shuffle(self.pq_files)
         chunk_size = len(self.pq_files)//num_out_files
         if len(self.pq_files) % num_out_files > 0:
@@ -417,15 +419,16 @@ class Shuffler():
                 os.makedirs(interim_dir)
         interim_files = []
         for idx, chunkset in enumerate(file_sets):
-            data_itr = GPUDatasetIterator(chunkset, engine="parquet")
+            data_itr = GPUDatasetIterator(chunkset, **self.kwargs)
             fn = os.path.join(interim_dir, f"shuffled_{idx}.parquet")
             interim_files.append(fn)
-            writer = pq.ParquetWriter(
-                    fn, self.starter_row.schema
-                )
-            
+
+            writer = None
             for chunk in data_itr:
-                writer.write_table(chunk.to_arrow())
+                tab_chk = chunk.to_arrow()
+                if not writer:
+                    writer = pq.ParquetWriter(fn, tab_chk.schema)
+                writer.write_table(tab_chk)
             writer.close()
             writer = None
         return interim_files
@@ -444,7 +447,7 @@ class Shuffler():
         bags = []
         for x in range(num_bags):
             bags.append(cudf.DataFrame())
-        # create GPUDataset Iterator for file
+        # create GPUDataset Iterator for interim file always parquet
         data_itr = GPUDatasetIterator(in_file, engine="parquet") 
         max_size = _allowable_batch_size(mem_limit, self.row_size)
         writer = None

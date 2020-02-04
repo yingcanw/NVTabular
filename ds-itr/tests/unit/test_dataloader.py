@@ -68,7 +68,7 @@ def test_gpu_file_iterator_dl(datasets, batch, dskey):
     assert_eq(df_itr.reset_index(drop=True), df_expect.reset_index(drop=True))
 
     
-@pytest.mark.parametrize("engine", ["parquet"])    
+@pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])    
 def test_shuffle_gpu(tmpdir, datasets, engine):
     num_files = 2
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
@@ -76,11 +76,19 @@ def test_shuffle_gpu(tmpdir, datasets, engine):
     if engine == "parquet":
         df1 = cudf.read_parquet(paths[0])[mycols_pq]
         df2 = cudf.read_parquet(paths[1])[mycols_pq]
-    shuf = ds.Shuffler(dirs, num_files)
+        shuf = ds.Shuffler(dirs, num_files)
+    else:
+        df1 = cudf.read_csv(paths[0], header=False, names=allcols_csv)[mycols_csv]
+        df2 = cudf.read_csv(paths[1], header=False, names=allcols_csv)[mycols_csv]
+        shuf = ds.Shuffler(dirs, num_files, names=allcols_csv)
+    
     new_files = shuf.shuffle(tmpdir)
-    df3 = cudf.read_parquet(new_files[0])[mycols_pq]
-    df4 = cudf.read_parquet(new_files[1])[mycols_pq]
-    import pdb; pdb.set_trace()
+    if engine == "parquet":
+        df3 = cudf.read_parquet(new_files[0])[mycols_pq]
+        df4 = cudf.read_parquet(new_files[1])[mycols_pq]
+    else:
+        df3 = cudf.read_parquet(new_files[0])[mycols_csv]
+        df4 = cudf.read_parquet(new_files[1])[mycols_csv]
     assert df1.shape[0] + df2.shape[0] == df3.shape[0] + df4.shape[0]
 
 
