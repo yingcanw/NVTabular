@@ -37,6 +37,7 @@ class DLLabelEncoder(object):
                 ]
         self.col = col
         self.limit_frac = limit_frac
+        self.cat_exp_count = 0
 
     def transform(self, y: cudf.Series, unk_idx=0) -> cudf.Series:
         """
@@ -124,6 +125,7 @@ class DLLabelEncoder(object):
     def dump_cats(self):
         x = cudf.DataFrame()
         x[self.col] = self._cats.unique()
+        self.cat_exp_count = self.cat_exp_count + x.shape[0]
         x.to_parquet(self.folder_path)
         self._cats = cudf.Series()
         #should find new file just exported
@@ -148,6 +150,8 @@ class DLLabelEncoder(object):
                         # if nothing is left to compare... bug out
                         break
         return compr
+    
+    
 
     def __repr__(self):
         return ("{0}(_cats={1!r})".format(type(self).__name__, self._cats.values_to_string()))

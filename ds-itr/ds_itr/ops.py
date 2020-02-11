@@ -6,15 +6,15 @@ from ds_itr.dl_encoder import DLLabelEncoder
 from ds_itr.ds_writer import DatasetWriter
 
 
-def get_columns(cols_ctx, cols_grp, target_cols):
-    tar_cols = []
-    for tar in target_cols:
-        if tar in cols_ctx[cols_grp].keys():
-            tar_cols = tar_cols + cols_ctx[cols_grp][tar]
-    return tar_cols
+
     
 
 class Operator:
+    columns=None
+    
+    def __init__(self, columns=columns):
+        self.columns=columns
+
     @property
     def _id(self):
         return self.__class__.__name__
@@ -22,6 +22,40 @@ class Operator:
     def describe(self):
         raise NotImplementedError("All operators must have a desription.")
         
+    def get_columns(self, cols_ctx, cols_grp, target_cols):
+        # providing any operator with direct list of columns overwrites cols dict
+        # burden on user to ensure columns exist in dataset (as discussed)
+        if self.columns:
+            return self.columns
+        tar_cols = []
+        for tar in target_cols:
+            if tar in cols_ctx[cols_grp].keys():
+                tar_cols = tar_cols + cols_ctx[cols_grp][tar]
+        return tar_cols
+
+class TransformOperator(Operator):
+    fin_cols = False
+    replace = False
+    default_in = None
+    default_out = None
+    
+    def __init__(self, columns=None, preprocessing=True, replace=False, default_in=None, default_out=None):
+        super().__init__(columns=columns)
+        self.preprocessing = preprocessing
+        self.replace = replace
+    
+    @property
+    def default_in(self):
+        if self.default_in:
+            return self.default_in
+        raise NotImplementedError("All Operators must have a default input set of columns (categorical or continuous).")
+    
+    @property
+    def default_out(self):
+        if self.default_out:
+            return self.default_out
+        raise NotImplementedError("All Operators must have a default output set of columns (categorical or continuous).")
+
     
     def apply_op(
         self,
@@ -33,12 +67,7 @@ class Operator:
         raise NotImplementedError(
             """The operation to be applied on the data frame chunk, given the required statistics.
                 """
-        )
-
-class TransformOperator(Operator):
-
-    def cols_suffix(self):
-        return f"_{self._id}"
+        )    
 
 
 class DFOperator(TransformOperator):
@@ -96,7 +125,7 @@ class MinMax(StatOperator):
     ):
         """ Iteration level Min Max collection, a chunk at a time
         """
-        cols = get_columns(columns_ctx, input_cols, target_cols)
+        cols = self.get_columns(columns_ctx, input_cols, target_cols)
         for col in cols:
             col_min = min(gdf[col].dropna())
             col_max = max(gdf[col].dropna())
@@ -149,7 +178,7 @@ class Moments(StatOperator):
     ):
         """ Iteration-level moment algorithm (mean/std).
         """
-        cols = get_columns(columns_ctx, input_cols, target_cols) 
+        cols = self.get_columns(columns_ctx, input_cols, target_cols) 
         for col in cols:
             if col not in self.counts:
                 self.counts[col] = 0.0
@@ -211,7 +240,7 @@ class Median(StatOperator):
     batch_medians = {}
     medians = {}
 
-    def __init__(self, fill=None):
+    def __init__(self, columns=None, fill=None):
         self.fill = fill
 
     def apply_op(
@@ -219,7 +248,7 @@ class Median(StatOperator):
     ):
         """ Iteration-level median algorithm.
         """
-        cols = get_columns(columns_ctx, input_cols, target_cols)
+        cols = self.get_columns(columns_ctx, input_cols, target_cols)
         for name in cols:
             if name not in self.batch_medians:
                 self.batch_medians[name] = []
@@ -265,7 +294,7 @@ class Encoder(StatOperator):
     ):
         """ Iteration-level categorical encoder update.
         """
-        cols = get_columns(columns_ctx, input_cols, target_cols)
+        cols = self.get_columns(columns_ctx, input_cols, target_cols)
         if not cols:
             return
         for name in cols:
@@ -284,19 +313,7 @@ class Encoder(StatOperator):
 
     def cat_read_all_files(self, cat_obj):
         cat_size = cat_obj._cats.shape[0]
-        file_paths = (
-            [
-                f"{cat_obj.col}/{x}"
-                for x in os.listdir(cat_obj.col)
-                if x.endswith("parquet")
-            ]
-            if os.path.exists(cat_obj.col)
-            else []
-        )
-        for fi in file_paths:
-            chunk = cudf.read_parquet(fi)
-            cat_size = cat_size + chunk.shape[0]
-        return cat_size
+        return cat_size + cat_obj.cat_exp_count
 
     def registered_stats(self):
         return ["encoders", "categories"]
@@ -312,7 +329,8 @@ class Encoder(StatOperator):
 
 
 class Export(TransformOperator):
-    def __init__(self, path='./ds_export', nfiles=1, shuffle=True, **kwargs):
+    def __init__(self, path='./ds_export', nfiles=1, shuffle=True, columns=None, preprocessing=False, replace=False):
+        super().__init__(columns=columns, preprocessing=preprocessing, replace=replace)
         self.path = path
         if not os.path.exists(path):
             os.makedirs(path)
@@ -332,7 +350,7 @@ class ZeroFill(TransformOperator):
     ):
         new_key = self._id
         columns_ctx[input_cols][new_key] = []
-        cont_names = get_columns(columns_ctx, input_cols, target_cols)
+        cont_names = self.get_columns(columns_ctx, input_cols, target_cols)
         if not cont_names:
             return gdf
         z_gdf = gdf[cont_names].fillna(0)
@@ -348,7 +366,7 @@ class LogOp(TransformOperator):
     ):
         new_key = self._id
         columns_ctx[input_cols][new_key] = []
-        cont_names = get_columns(columns_ctx, input_cols, target_cols)
+        cont_names = self.get_columns(columns_ctx, input_cols, target_cols)
         if not cont_names:
             return gdf
         new_gdf = np.log(gdf[cont_names].astype(np.float32) + 1)
@@ -370,7 +388,7 @@ class Normalize(DFOperator):
     def apply_op(
         self, gdf: cudf.DataFrame, stats_context:dict, columns_ctx: dict, input_cols, target_cols='base'
     ):
-        cont_names = get_columns(columns_ctx, input_cols, target_cols)
+        cont_names = self.get_columns(columns_ctx, input_cols, target_cols)
         new_key = self._id
         columns_ctx[input_cols][new_key] = []
         if not cont_names or not stats_context["stds"]:
@@ -396,7 +414,7 @@ class FillMissing(DFOperator):
     MEDIAN = "median"
     CONSTANT = "constant"
 
-    def __init__(self, fill_strategy=MEDIAN, fill_val=0, add_col=False):
+    def __init__(self, fill_strategy=MEDIAN, fill_val=0, add_col=False, columns=None, final_cols=False, replace=False):
         self.fill_strategy = fill_strategy
         self.fill_val = fill_val
         self.add_col = add_col
@@ -411,7 +429,7 @@ class FillMissing(DFOperator):
     ):
         new_key = self._id
         columns_ctx[input_cols][new_key] = []
-        cont_names = get_columns(columns_ctx, input_cols, target_cols)
+        cont_names = self.get_columns(columns_ctx, input_cols, target_cols)
         if not cont_names or not stats_context["medians"]:
             return gdf
         z_gdf = self.apply_filler(gdf[cont_names], stats_context, cont_names)
@@ -452,7 +470,7 @@ class Categorify(DFOperator):
     ):
         new_key = self._id
         columns_ctx[input_cols][new_key] = []
-        cat_names = get_columns(columns_ctx, input_cols, target_cols)
+        cat_names = self.get_columns(columns_ctx, input_cols, target_cols)
         if not cat_names:
             return gdf
         cat_names = [name for name in cat_names if name in gdf.columns]
@@ -464,8 +482,9 @@ class Categorify(DFOperator):
             gdf[new_col] = gdf[new_col].astype("int64")
         columns_ctx[input_cols][new_key] = list(new_cols)
         return gdf
+    
 
-    def get_emb_sz(self, encoders, cat_names):
+    def get_emb_sz(self, encoders, cat_names):    
         work_in = {}
         for key in encoders.keys():
             work_in[key] = encoders[key] + 1
@@ -484,6 +503,7 @@ class Categorify(DFOperator):
         self.embed_sz[n] = sz
         return n_cat, sz
     
+
 all_ops = {
     MinMax()._id: MinMax(),
     Moments()._id: Moments(), 

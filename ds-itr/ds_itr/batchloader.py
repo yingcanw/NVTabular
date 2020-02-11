@@ -141,9 +141,20 @@ class DLCollator:
         self.transform = transform
         self.preproc = preproc
         if self.preproc:
-            self.cat_names = self.preproc.columns_ctx['final']['cols']['categorical']
-            self.cont_names = self.preproc.columns_ctx['final']['cols']['continuous']
-            self.label_name = self.preproc.columns_ctx['final']['cols']['label']
+            cat_names_key = self.preproc.columns_ctx['final']['ctx']['categorical']
+            cont_names_key = self.preproc.columns_ctx['final']['ctx']['continuous']
+            label_name_key = self.preproc.columns_ctx['final']['ctx']['label']
+            for key in cat_names_key:
+                self.cat_names = self.cat_names + self.preproc.columns_ctx['categorical'][key]
+            for key in cont_names_key:
+                self.cont_names = self.cont_names + self.preproc.columns_ctx['continuous'][key]
+            for key in label_name_key:
+                if key in 'label':
+                    key = 'base'
+                self.label_name = self.label_name + self.preproc.columns_ctx['label'][key]
+            self.cat_names = list(set(self.cat_names))
+            self.cont_names = list(set(self.cont_names))
+            self.label_name = list(set(self.label_name))
         else:
             self.cat_names = cat_names if cat_names else []
             self.cont_names = cont_names if cont_names else []
