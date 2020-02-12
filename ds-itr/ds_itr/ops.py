@@ -48,22 +48,22 @@ class TransformOperator(Operator):
         super().__init__(columns=columns)
         self.preprocessing = preprocessing
         self.replace = replace
+        self.default_in = default_in
+        self.default_out = default_out
 
-    @property
-    def default_in(self):
-        if self.default_in:
-            return self.default_in
-        raise NotImplementedError(
-            "All Operators must have a default input set of columns (categorical or continuous)."
-        )
+    def get_default_in(self):
+        if self.default_in is None:
+            raise NotImplementedError(
+                "default_in columns have not been specified for this operator"
+            )
+        return self.default_in
 
-    @property
-    def default_out(self):
-        if self.default_out:
-            return self.default_out
-        raise NotImplementedError(
-            "All Operators must have a default output set of columns (categorical or continuous)."
-        )
+    def get_default_out(self):
+        if self.default_out is None:
+            raise NotImplementedError(
+                "default_out columns have not been specified for this operator"
+            )
+        return self.default_out
 
     def apply_op(
         self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base"
@@ -432,9 +432,18 @@ class FillMissing(DFOperator):
         fill_val=0,
         add_col=False,
         columns=None,
-        final_cols=False,
+        preprocessing=True,
         replace=False,
+        default_in=None,
+        default_out=None,
     ):
+        super().__init__(
+            columns=columns,
+            preprocessing=preprocessing,
+            replace=replace,
+            default_in=default_in,
+            default_out=default_out,
+        )
         self.fill_strategy = fill_strategy
         self.fill_val = fill_val
         self.add_col = add_col

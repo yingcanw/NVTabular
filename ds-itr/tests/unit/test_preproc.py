@@ -129,14 +129,14 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         columns = mycols_csv
     cont_names = ["x", "y", "id"]
     label_name = ["label"]
-
+    
     config = pp.get_new_config()
     config["FE"]["continuous"] = [ops.ZeroFill()]
     config["PP"]["continuous"] = [[ops.ZeroFill(), ops.Normalize()]]
     config["PP"]["categorical"] = [ops.Categorify()]
-    #     config["FE"]["continuous"] = [{ops.ZeroFill()._id: [[]]}]
-    #     config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
-    #     config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.ZeroFill()._id]]}]
+#     config["FE"]["continuous"] = [{ops.ZeroFill()._id: [[]]}]
+#     config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
+#     config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.ZeroFill()._id]]}]
 
     processor = pp.Preprocessor(
         cat_names=cat_names,
@@ -154,6 +154,7 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         names=allcols_csv,
     )
 
+
     processor.update_stats(data_itr)
     if dump:
         config_file = tmpdir + "/temp.yaml"
@@ -163,33 +164,26 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
 
     def get_norms(tar: cudf.Series):
         gdf = tar.fillna(0)
-        gdf = gdf * (gdf >= 0).astype("int")
+        gdf = gdf * (gdf>=0).astype("int")
         return gdf
-
-    assert math.isclose(
-        get_norms(df.x).mean(), processor.stats["means"]["x_ZeroFill"], rel_tol=1e-4
-    )
-    assert math.isclose(
-        get_norms(df.y).mean(), processor.stats["means"]["y_ZeroFill"], rel_tol=1e-4
-    )
-    #     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_ZeroFill_LogOp"], rel_tol=1e-4)
-    assert math.isclose(
-        get_norms(df.x).std(), processor.stats["stds"]["x_ZeroFill"], rel_tol=1e-3
-    )
-    assert math.isclose(
-        get_norms(df.y).std(), processor.stats["stds"]["y_ZeroFill"], rel_tol=1e-3
-    )
-    #     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_ZeroFill_LogOp"], rel_tol=1e-3)
+    
+   
+    assert math.isclose(get_norms(df.x).mean(), processor.stats["means"]["x_ZeroFill"], rel_tol=1e-4)
+    assert math.isclose(get_norms(df.y).mean(), processor.stats["means"]["y_ZeroFill"], rel_tol=1e-4)
+#     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_ZeroFill_LogOp"], rel_tol=1e-4)
+    assert math.isclose(get_norms(df.x).std(), processor.stats["stds"]["x_ZeroFill"], rel_tol=1e-3)
+    assert math.isclose(get_norms(df.y).std(), processor.stats["stds"]["y_ZeroFill"], rel_tol=1e-3)
+#     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_ZeroFill_LogOp"], rel_tol=1e-3)
 
     # Check that categories match
     if engine == "parquet":
         cats_expected0 = df["name-cat"].unique().values_to_string()
         cats0 = processor.stats["encoders"]["name-cat"]._cats.values_to_string()
-        # adding the None entry as a string because of move from gpu
+        #adding the None entry as a string because of move from gpu
         assert cats0 == ["None"] + cats_expected0
     cats_expected1 = df["name-string"].unique().values_to_string()
     cats1 = processor.stats["encoders"]["name-string"]._cats.values_to_string()
-    # adding the None entry as a string because of move from gpu
+    #adding the None entry as a string because of move from gpu
     assert cats1 == ["None"] + cats_expected1
 
     # Write to new "shuffled" and "processed" dataset
@@ -231,10 +225,10 @@ def test_pq_to_pq_processed(tmpdir, datasets):
     config["FE"]["continuous"] = [[ops.FillMissing(), ops.LogOp()]]
     config["PP"]["continuous"] = [[ops.LogOp(), ops.Normalize()]]
     config["PP"]["categorical"] = [ops.Categorify()]
-    #     config["FE"]["continuous"] = [{ops.FillMissing()._id: [[]]}]
-    #     config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
-    #     config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.FillMissing()._id]]}]
-
+#     config["FE"]["continuous"] = [{ops.FillMissing()._id: [[]]}]
+#     config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
+#     config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.FillMissing()._id]]}]
+    
     processor = pp.Preprocessor(
         cat_names=cat_names,
         cont_names=cont_names,
@@ -242,13 +236,18 @@ def test_pq_to_pq_processed(tmpdir, datasets):
         config=config,
         to_cpu=True,
     )
+    
+    paths = [os.path.join(indir, x) for x in os.listdir(indir) if x.endswith("parquet")
+            ]
 
-    paths = [os.path.join(indir, x) for x in os.listdir(indir) if x.endswith("parquet")]
 
-    data_itr = ds.GPUDatasetIterator(paths, use_row_groups=True,)
-
+    data_itr = ds.GPUDatasetIterator(
+        paths,
+        use_row_groups=True,
+    )
+    
     processor.update_stats(data_itr)
-    #     processor.load_stats(sample_stats)
+#     processor.load_stats(sample_stats)
     processor.pq_to_pq_processed(
         indir,
         outdir,
@@ -309,8 +308,10 @@ def test_pq_to_pq_processed(tmpdir, datasets):
 #     )
 #     estimated_row_size_csv = reader_csv.estimated_row_size
 #     assert estimated_row_size_csv == read_byte_size
+    
 
-
+    
+    
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
 @pytest.mark.parametrize("dump", [True, False])
@@ -334,19 +335,20 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
         columns = mycols_csv
     cont_names = ["x", "y", "id"]
     label_name = ["label"]
-
+    
     config = pp.get_new_config()
     # add operators with dependencies
     config["FE"]["continuous"] = [[ops.FillMissing(), ops.LogOp()]]
     config["PP"]["continuous"] = [[ops.LogOp(), ops.Normalize()]]
     config["PP"]["categorical"] = [ops.Categorify()]
-    #     config["FE"]["continuous"] = [{ops.Bucketize()._id: [[]]},
-    #                                     {ops.FillMissing()._id: [[]]},
-    #                                   {ops.LogOp()._id: [[ops.FillMissing()._id]]}]
+#     config["FE"]["continuous"] = [{ops.Bucketize()._id: [[]]},
+#                                     {ops.FillMissing()._id: [[]]},
+#                                   {ops.LogOp()._id: [[ops.FillMissing()._id]]}]
 
-    #     # preprocessing happens to all available columns
-    #     config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
-    #     config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.LogOp()._id]]}]
+#     # preprocessing happens to all available columns 
+#     config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
+#     config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.LogOp()._id]]}]
+    
 
     processor = pp.Preprocessor(
         cat_names=cat_names,
@@ -365,7 +367,8 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
     )
 
     processor.update_stats(data_itr)
-
+    
+    
     if dump:
         config_file = tmpdir + "/temp.yaml"
         processor.save_stats(config_file)
@@ -377,41 +380,25 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
         gdf = tar.fillna(ser_median)
         gdf = np.log(gdf + 1)
         return gdf
-
     # Check mean and std - No good right now we have to add all other changes; Zerofill, Log
+    
+    assert math.isclose(get_norms(df.x).mean(), processor.stats["means"]["x_FillMissing_LogOp"], rel_tol=1e-4)
+    assert math.isclose(get_norms(df.y).mean(), processor.stats["means"]["y_FillMissing_LogOp"], rel_tol=1e-4)
+#     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_FillMissing_LogOp"], rel_tol=1e-4)
+    assert math.isclose(get_norms(df.x).std(), processor.stats["stds"]["x_FillMissing_LogOp"], rel_tol=1e-3)
+    assert math.isclose(get_norms(df.y).std(), processor.stats["stds"]["y_FillMissing_LogOp"], rel_tol=1e-3)
+#     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_FillMissing_LogOp"], rel_tol=1e-3)
 
-    assert math.isclose(
-        get_norms(df.x).mean(),
-        processor.stats["means"]["x_FillMissing_LogOp"],
-        rel_tol=1e-4,
-    )
-    assert math.isclose(
-        get_norms(df.y).mean(),
-        processor.stats["means"]["y_FillMissing_LogOp"],
-        rel_tol=1e-4,
-    )
-    #     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_FillMissing_LogOp"], rel_tol=1e-4)
-    assert math.isclose(
-        get_norms(df.x).std(),
-        processor.stats["stds"]["x_FillMissing_LogOp"],
-        rel_tol=1e-3,
-    )
-    assert math.isclose(
-        get_norms(df.y).std(),
-        processor.stats["stds"]["y_FillMissing_LogOp"],
-        rel_tol=1e-3,
-    )
-    #     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_FillMissing_LogOp"], rel_tol=1e-3)
 
     # Check that categories match
     if engine == "parquet":
         cats_expected0 = df["name-cat"].unique().values_to_string()
         cats0 = processor.stats["encoders"]["name-cat"]._cats.values_to_string()
-        # adding the None entry as a string because of move from gpu
+        #adding the None entry as a string because of move from gpu
         assert cats0 == ["None"] + cats_expected0
     cats_expected1 = df["name-string"].unique().values_to_string()
     cats1 = processor.stats["encoders"]["name-string"]._cats.values_to_string()
-    # adding the None entry as a string because of move from gpu
+    #adding the None entry as a string because of move from gpu
     assert cats1 == ["None"] + cats_expected1
 
     # Write to new "shuffled" and "processed" dataset
@@ -439,7 +426,8 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
     assert num_rows == len(df_pp)
     shutil.rmtree(processor.ds_exports)
 
-
+    
+    
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
 @pytest.mark.parametrize("dump", [True, False])
@@ -465,15 +453,18 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine):
     label_name = ["label"]
 
     processor = pp.Preprocessor(
-        cat_names=cat_names, cont_names=cont_names, label_name=label_name, to_cpu=False,
+        cat_names=cat_names,
+        cont_names=cont_names,
+        label_name=label_name,
+        to_cpu=False,
     )
-
-    processor.add_feature(ops.FillMissing())
-    processor.add_feature(ops.LogOp())
-    processor.add_preprocess(ops.Normalize())
-    processor.add_preprocess(ops.Categorify())
+    
+    processor.add_feature([ops.FillMissing(default_in='continuous', default_out='continuous'), ops.LogOp(default_in='continuous', default_out='continuous')])
+#     processor.add_feature()
+    processor.add_preprocess(ops.Normalize(default_in='continuous', default_out='continuous'))
+    processor.add_preprocess(ops.Categorify(default_in='categorical', default_out='categorical'))
     processor.finalize()
-
+    
     data_itr = ds.GPUDatasetIterator(
         paths,
         columns=columns,
@@ -483,7 +474,8 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine):
     )
 
     processor.update_stats(data_itr)
-
+    
+    
     if dump:
         config_file = tmpdir + "/temp.yaml"
         processor.save_stats(config_file)
@@ -495,41 +487,26 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine):
         gdf = tar.fillna(ser_median)
         gdf = np.log(gdf + 1)
         return gdf
-
     # Check mean and std - No good right now we have to add all other changes; Zerofill, Log
 
-    assert math.isclose(
-        get_norms(df.x).mean(),
-        processor.stats["means"]["x_FillMissing_LogOp"],
-        rel_tol=1e-4,
-    )
-    assert math.isclose(
-        get_norms(df.y).mean(),
-        processor.stats["means"]["y_FillMissing_LogOp"],
-        rel_tol=1e-4,
-    )
-    #     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_FillMissing_LogOp"], rel_tol=1e-4)
-    assert math.isclose(
-        get_norms(df.x).std(),
-        processor.stats["stds"]["x_FillMissing_LogOp"],
-        rel_tol=1e-3,
-    )
-    assert math.isclose(
-        get_norms(df.y).std(),
-        processor.stats["stds"]["y_FillMissing_LogOp"],
-        rel_tol=1e-3,
-    )
-    #     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_FillMissing_LogOp"], rel_tol=1e-3)
+    
+    assert math.isclose(get_norms(df.x).mean(), processor.stats["means"]["x_FillMissing_LogOp"], rel_tol=1e-3)
+    assert math.isclose(get_norms(df.y).mean(), processor.stats["means"]["y_FillMissing_LogOp"], rel_tol=1e-3)
+#     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_FillMissing_LogOp"], rel_tol=1e-4)
+    assert math.isclose(get_norms(df.x).std(), processor.stats["stds"]["x_FillMissing_LogOp"], rel_tol=1e-3)
+    assert math.isclose(get_norms(df.y).std(), processor.stats["stds"]["y_FillMissing_LogOp"], rel_tol=1e-3)
+#     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_FillMissing_LogOp"], rel_tol=1e-3)
+
 
     # Check that categories match
     if engine == "parquet":
         cats_expected0 = df["name-cat"].unique().values_to_string()
         cats0 = processor.stats["encoders"]["name-cat"]._cats.values_to_string()
-        # adding the None entry as a string because of move from gpu
+        #adding the None entry as a string because of move from gpu
         assert cats0 == ["None"] + cats_expected0
     cats_expected1 = df["name-string"].unique().values_to_string()
     cats1 = processor.stats["encoders"]["name-string"]._cats.values_to_string()
-    # adding the None entry as a string because of move from gpu
+    #adding the None entry as a string because of move from gpu
     assert cats1 == ["None"] + cats_expected1
 
     # Write to new "shuffled" and "processed" dataset
@@ -556,3 +533,4 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine):
     )
     assert num_rows == len(df_pp)
     shutil.rmtree(processor.ds_exports)
+    

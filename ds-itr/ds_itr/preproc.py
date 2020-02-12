@@ -30,6 +30,22 @@ def get_new_config():
     return config
 
 
+def get_new_list_config():
+    """
+    boiler config object, to be filled in with targeted operator tasks
+    """
+    config = {}
+    config["FE"] = {}
+    config["FE"]["all"] = []
+    config["FE"]["continuous"] = []
+    config["FE"]["categorical"] = []
+    config["PP"] = {}
+    config["PP"]["all"] = []
+    config["PP"]["continuous"] = []
+    config["PP"]["categorical"] = []
+    return config
+
+
 def _shuffle_part(gdf):
     sort_key = "__sort_index__"
     arr = cp.arange(len(gdf))
@@ -78,30 +94,47 @@ class Preprocessor:
             self.load_config(config)
         else:
             # create blank config and for later fill in
-            self.config = get_new_config()
+            self.config = get_new_list_config()
             warnings.warn("No Config was loaded, unable to create task list")
 
         self.clear_stats()
 
-    def config_add_ops(self, operators, phase, target_cols):
-        if phase in self.config and target_cols in self.config:
-            # append operator as single entry or as a list
+    def get_tar_cols(self, operators):
+        if type(operators) is list:
+            target_cols = operators[0].get_default_in()
+        else:
+            target_cols = operators.get_default_in()
+        return target_cols
+
+    def config_add_ops(self, operators, phase):
+        target_cols = self.get_tar_cols(operators)
+        if phase in self.config and target_cols in self.config[phase]:
+            # append operator as single ent1ry or as a list
             # maybe should be list always to make downstream easier
             self.config[phase][target_cols].append(operators)
             return
+
         warnings.warn(f"No main key {phase} or sub key {target_cols} found in config")
 
     def add_feature(self, operators):
-        if not type(operators) is list:
-            operators = [operators]
-        for op in operators:
-            self.config_add_ops(self, op, "FE", op.input_cols)
+        self.config_add_ops(operators, "FE")
 
     def add_preprocess(self, operators):
-        if not type(operators) is list:
-            operators = [operators]
-        for op in operators:
-            self.config_add_ops(self, op, "PP", op.input_cols)
+        # must add last operator from FE for get_default_in
+        target_cols = self.get_tar_cols(operators)
+        if self.config["FE"][target_cols]:
+            op_to_add = self.config["FE"][target_cols][-1]
+        else:
+            op_to_add = []
+        if type(op_to_add) is list and op_to_add:
+            op_to_add = op_to_add[-1]
+        if op_to_add:
+            op_to_add = [op_to_add]
+        if type(operators) is list:
+            op_to_add = op_to_add + operators
+        else:
+            op_to_add.append(operators)
+        self.config_add_ops(op_to_add, "PP")
 
     def reg_all_ops(self, task_list):
         for tup in task_list:
