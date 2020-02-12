@@ -115,4 +115,3 @@ def datasets(tmpdir_factory):
     )
 
     return datadir
-

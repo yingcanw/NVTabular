@@ -34,12 +34,14 @@ def test_dl_encoder_fit_transform_ltm(datasets, batch, dskey):
     data_itr = ds.GPUDatasetIterator(
         paths[0], batch_size=batch, gpu_memory_frac=2e-8, names=names
     )
-    enc = encoder.DLLabelEncoder("name-string", path=str(datasets['cats']), limit_frac=1e-10)
+    enc = encoder.DLLabelEncoder(
+        "name-string", path=str(datasets["cats"]), limit_frac=1e-10
+    )
     for chunk in data_itr:
         enc.fit(chunk["name-string"])
     new_ser = enc.transform(df_expect["name-string"])
     unis = df_expect["name-string"].unique().values_to_string()
-    # set does not pick up None values so must be added if found in 
+    # set does not pick up None values so must be added if found in
     cat_count = max(new_ser)
     assert len(unis) == max(new_ser)
     for file in enc.file_paths:

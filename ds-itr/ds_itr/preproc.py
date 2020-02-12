@@ -28,9 +28,8 @@ def get_new_config():
     config["PP"]["continuous"] = {}
     config["PP"]["categorical"] = {}
     return config
-    
-    
-    
+
+
 def _shuffle_part(gdf):
     sort_key = "__sort_index__"
     arr = cp.arange(len(gdf))
@@ -50,20 +49,24 @@ class Preprocessor:
         df_ops=None,
         to_cpu=True,
         config=None,
-        export_path="./ds_export"
+        export_path="./ds_export",
     ):
-        self.reg_funcs = {StatOperator: self.reg_stat_ops, TransformOperator: self.reg_feat_ops, DFOperator:self.reg_df_ops}
+        self.reg_funcs = {
+            StatOperator: self.reg_stat_ops,
+            TransformOperator: self.reg_feat_ops,
+            DFOperator: self.reg_df_ops,
+        }
         self.master_task_list = []
         self.phases = []
         self.columns_ctx = {}
-        self.columns_ctx['all'] = {} 
-        self.columns_ctx['continuous'] = {}
-        self.columns_ctx['categorical'] = {}
-        self.columns_ctx['label'] = {}
-        self.columns_ctx['all']['base'] = cont_names + cat_names + label_name
-        self.columns_ctx['continuous']['base'] = cont_names
-        self.columns_ctx['categorical']['base'] = cat_names
-        self.columns_ctx['label']['base'] = label_name
+        self.columns_ctx["all"] = {}
+        self.columns_ctx["continuous"] = {}
+        self.columns_ctx["categorical"] = {}
+        self.columns_ctx["label"] = {}
+        self.columns_ctx["all"]["base"] = cont_names + cat_names + label_name
+        self.columns_ctx["continuous"]["base"] = cont_names
+        self.columns_ctx["categorical"]["base"] = cat_names
+        self.columns_ctx["label"]["base"] = label_name
         self.feat_ops = {}
         self.stat_ops = {}
         self.df_ops = {}
@@ -74,16 +77,38 @@ class Preprocessor:
         if config:
             self.load_config(config)
         else:
+            # create blank config and for later fill in
+            self.config = get_new_config()
             warnings.warn("No Config was loaded, unable to create task list")
 
-
         self.clear_stats()
-        
-    
+
+    def config_add_ops(self, operators, phase, target_cols):
+        if phase in self.config and target_cols in self.config:
+            # append operator as single entry or as a list
+            # maybe should be list always to make downstream easier
+            self.config[phase][target_cols].append(operators)
+            return
+        warnings.warn(f"No main key {phase} or sub key {target_cols} found in config")
+
+    def add_feature(self, operators):
+        if not type(operators) is list:
+            operators = [operators]
+        for op in operators:
+            self.config_add_ops(self, op, "FE", op.input_cols)
+
+    def add_preprocess(self, operators):
+        if not type(operators) is list:
+            operators = [operators]
+        for op in operators:
+            self.config_add_ops(self, op, "PP", op.input_cols)
+
     def reg_all_ops(self, task_list):
         for tup in task_list:
             self.reg_funcs[tup[0].__class__.__base__]([tup[0]])
-    
+
+    def finalize(self):
+        self.load_config(self.config)
 
     def reg_feat_ops(self, feat_ops):
         for feat_op in feat_ops:
@@ -164,7 +189,6 @@ class Preprocessor:
             outdir, write_index=False, chunk_size=chunk_size, engine="pyarrow"
         )
 
-
     def load_config(self, config, pro=False):
         # separate FE and PP
         if not pro:
@@ -174,32 +198,29 @@ class Preprocessor:
             self.task_sets[task_set] = self.build_tasks(config[task_set])
             self.master_task_list = self.master_task_list + self.task_sets[task_set]
         self.remove_dupes()
-        
+
         self.reg_all_ops(self.master_task_list)
         baseline, leftovers = self.sort_task_types(self.master_task_list)
         self.phases.append(baseline)
         self.phase_creator(leftovers)
         self.phases_export()
         self.create_final_col_refs()
-     
-    
+
     def remove_dupes(self):
         for idx, ptask in enumerate(self.master_task_list):
             for sdx, stask in enumerate(self.master_task_list):
-                #if you find it again later in the list remove it
+                # if you find it again later in the list remove it
                 if ptask[0] == stask[0] and ptask[1] in stask[1] and not sdx == idx:
                     self.master_task_list.remove(stask)
-    
-    
-    
+
     def phase_creator(self, task_list):
         trans_op = False
         for task in task_list:
             added = False
 
             cols_needed = task[2].copy()
-            if 'base' in cols_needed:
-                cols_needed.remove('base') 
+            if "base" in cols_needed:
+                cols_needed.remove("base")
             for idx, phase in enumerate(self.phases):
                 if added:
                     break
@@ -211,11 +232,10 @@ class Preprocessor:
                 if not cols_needed and self.find_parents(task[3], idx):
                     added = True
                     phase.append(task)
-                        
+
             if not added:
                 self.phases.append([task])
-                
-                
+
     def phases_export(self):
         for idx, phase in enumerate(self.phases[:-1]):
             trans_op = False
@@ -225,8 +245,8 @@ class Preprocessor:
                     break
             if trans_op:
                 tar_path = os.path.join(self.ds_exports, str(idx))
-                phase.append([Export(path=f"{tar_path}"),None,[],[]])
-    
+                phase.append([Export(path=f"{tar_path}"), None, [], []])
+
     def find_parents(self, ops_list, phase_idx):
         """
         Attempt to find all ops in ops_list within subrange of phases
@@ -244,21 +264,16 @@ class Preprocessor:
         if not ops_copy:
             return True
 
-            
-                        
-                        
     def sort_task_types(self, master_list):
         nodeps = []
         for tup in master_list:
-            if 'base' in tup[2]:
+            if "base" in tup[2]:
                 # base feature with no dependencies
                 if not tup[3]:
                     master_list.remove(tup)
                     nodeps.append(tup)
         return nodeps, master_list
 
-    
-    
     def compile_dict_from_list(self, task_list_dict):
         tk_d = {}
         phases = 0
@@ -266,13 +281,10 @@ class Preprocessor:
             tk_d[phase] = {}
             for k, v in task_list.items():
                 tk_d[phase][k] = self.extract_tasks_dict(v)
-            #increment at end for next if exists
+            # increment at end for next if exists
             phases = phases + 1
         return tk_d
-                
-        
-    
-    
+
     def extract_tasks_dict(self, task_list):
         # contains a list of lists [[fillmissing, Logop]], Normalize, Categorify]
         task_dicts = []
@@ -289,48 +301,49 @@ class Preprocessor:
                 task_dicts.append(to_add)
         return task_dicts
 
-
     def create_final_col_refs(self):
-        
+
         if "final" in self.columns_ctx.keys():
             return
-#         self.columns_ctx['final'] = {}
+        #         self.columns_ctx['final'] = {}
         final = {}
-        for task in self.task_sets['PP']:
+        for task in self.task_sets["PP"]:
             if not task[1] in final.keys():
                 final[task[1]] = []
             for x in final[task[1]]:
-                if x in task[2]: 
+                if x in task[2]:
                     final[task[1]].remove(x)
             if not task[0].__class__.__base__ == StatOperator:
                 final[task[1]].append(task[0]._id)
-        #add labels too
-        final['label'] = []
-        for p_set, col_ctx in self.columns_ctx['label'].items():
-            if not final['label']:
-                final['label']= col_ctx
+        # add labels too
+        final["label"] = []
+        for p_set, col_ctx in self.columns_ctx["label"].items():
+            if not final["label"]:
+                final["label"] = col_ctx
             else:
-                final['label'] = final['label'] + col_ctx
-        self.columns_ctx['final'] = {}
-        self.columns_ctx['final']['ctx']= final
-            
-   
+                final["label"] = final["label"] + col_ctx
+        self.columns_ctx["final"] = {}
+        self.columns_ctx["final"]["ctx"] = final
+
     def create_final_cols(self):
-        #still adding double need to stop that
+        # still adding double need to stop that
         final_ctx = {}
-        for key, ctx_list in self.columns_ctx['final']['ctx'].items():
+        for key, ctx_list in self.columns_ctx["final"]["ctx"].items():
             to_add = None
             for ctx in ctx_list:
                 if not ctx in self.columns_ctx[key].keys():
-                    ctx = 'base'
-                to_add = self.columns_ctx[key][ctx] if not to_add else to_add + self.columns_ctx[key][ctx]
+                    ctx = "base"
+                to_add = (
+                    self.columns_ctx[key][ctx]
+                    if not to_add
+                    else to_add + self.columns_ctx[key][ctx]
+                )
             if not key in final_ctx.keys():
                 final_ctx[key] = to_add
             final_ctx[key] = final_ctx[key] + to_add
-        self.columns_ctx['final']['cols'] = final_ctx
-    
-        
-    def build_tasks(self, task_dict : dict):
+        self.columns_ctx["final"]["cols"] = final_ctx
+
+    def build_tasks(self, task_dict: dict):
         """
         task_dict: the task dictionary retrieved from the config 
         Based on input config information 
@@ -343,13 +356,15 @@ class Preprocessor:
                     # get op from op_id
                     target_op = all_ops[op_id]
                     if not target_op:
-                        warnings.warn(f"""Did not find corresponding op for id: {op_id}. 
+                        warnings.warn(
+                            f"""Did not find corresponding op for id: {op_id}. 
                                       If this is a custom operator, check it was properyl
-                                      loaded.""")
+                                      loaded."""
+                        )
                         break
                     if dep_set:
                         for dep_grp in dep_set:
-                            if hasattr(target_op, 'req_stats'):
+                            if hasattr(target_op, "req_stats"):
                                 self.reg_stat_ops(target_op.req_stats)
                                 for opo in target_op.req_stats:
                                     # only add if it doesnt already exist
@@ -358,24 +373,32 @@ class Preprocessor:
                                         if opo is task_d[0] and cols in task_d[1]:
                                             found = True
                                     if not found:
-                                        dep_grp = dep_grp if dep_grp else ['base']
+                                        dep_grp = dep_grp if dep_grp else ["base"]
                                         dep_tasks.append((opo, cols, dep_grp, []))
-                            dep_grp = dep_grp if dep_grp else ['base']
-                            parents = [] if not hasattr(target_op, 'req_stats') else target_op.req_stats
+                            dep_grp = dep_grp if dep_grp else ["base"]
+                            parents = (
+                                []
+                                if not hasattr(target_op, "req_stats")
+                                else target_op.req_stats
+                            )
                             dep_tasks.append((target_op, cols, dep_grp, parents))
         return dep_tasks
-    
+
     def update_stats(self, itr, end_phase=None):
         end = end_phase if end_phase else len(self.phases)
         for phase in self.phases[:end]:
-            #set parameters for export necessary,
+            # set parameters for export necessary,
             # running only stats ops
-            #not running stat_ops < --- may not be necessary may mean running apply_ops
+            # not running stat_ops < --- may not be necessary may mean running apply_ops
             new_path = self.exec_phase(itr, phase)
             if new_path:
-                new_files = [os.path.join(new_path, x) for x in os.listdir(new_path) if x.endswith("parquet")]
+                new_files = [
+                    os.path.join(new_path, x)
+                    for x in os.listdir(new_path)
+                    if x.endswith("parquet")
+                ]
                 itr = GPUDatasetIterator(new_files, engine="parquet")
-        
+
     # run phase
     def exec_phase(self, itr, tasks):
         """ Gather necessary column statistics in single pass.
@@ -383,20 +406,32 @@ class Preprocessor:
         new_path = None
         run_stat_ops = []
         for gdf in itr:
-            #put the FE tasks here roll through them
+            # put the FE tasks here roll through them
             for task in tasks:
                 op, cols_grp, target_cols, parents = task
                 if op._id in self.stat_ops:
                     op = self.stat_ops[op._id]
-                    op.apply_op(gdf, self.columns_ctx, cols_grp, target_cols=target_cols)
+                    op.apply_op(
+                        gdf, self.columns_ctx, cols_grp, target_cols=target_cols
+                    )
                     run_stat_ops.append(op) if op not in run_stat_ops else None
                 elif op._id in self.feat_ops:
-                    gdf = self.feat_ops[op._id].apply_op(gdf, self.columns_ctx, cols_grp, target_cols=target_cols)
+                    gdf = self.feat_ops[op._id].apply_op(
+                        gdf, self.columns_ctx, cols_grp, target_cols=target_cols
+                    )
                 elif op._id in self.df_ops:
-                    gdf = self.df_ops[op._id].apply_op(gdf, self.stats, self.columns_ctx, cols_grp, target_cols=target_cols)
+                    gdf = self.df_ops[op._id].apply_op(
+                        gdf,
+                        self.stats,
+                        self.columns_ctx,
+                        cols_grp,
+                        target_cols=target_cols,
+                    )
                 elif isinstance(op, Export):
                     new_path = op.path
-                    op.apply_op(gdf, self.columns_ctx, cols_grp, target_cols=target_cols)
+                    op.apply_op(
+                        gdf, self.columns_ctx, cols_grp, target_cols=target_cols
+                    )
             # if export is activated combine as many GDFs as possible and then write them out cudf.concat([exp_gdf, gdf], axis=0)
         for stat_op in run_stat_ops:
             stat_op.read_fin()
@@ -437,7 +472,7 @@ class Preprocessor:
         def _set_stats(self, stats_dict):
             for key, stat in stats_dict.items():
                 self.stats[key] = stat
-        
+
         with open(path, "r") as infile:
             main_obj = yaml.load(infile)
             _set_stats(self, main_obj["stats"])
@@ -450,7 +485,6 @@ class Preprocessor:
                 col, file_paths=cats[0], cats=cudf.Series(cats[1])
             )
         self.reg_all_ops(self.master_task_list)
-        
 
     def apply_ops(self, gdf, start_phase=None, end_phase=None, run_fe=True):
         """
@@ -459,18 +493,26 @@ class Preprocessor:
         Controls the application of registered preprocessing phase op
         tasks
         """
-        #put phases that you want to run represented in a slice
+        # put phases that you want to run represented in a slice
         # dont run stat_ops in apply
-        # run the PP ops 
+        # run the PP ops
         start = start_phase if start_phase else 0
         end = end_phase if end_phase else len(self.phases)
         for tasks in self.phases[start:end]:
             for task in tasks:
                 op, cols_grp, target_cols, parents = task
                 if op._id in self.feat_ops:
-                    gdf = self.feat_ops[op._id].apply_op(gdf, self.columns_ctx, cols_grp, target_cols=target_cols)
+                    gdf = self.feat_ops[op._id].apply_op(
+                        gdf, self.columns_ctx, cols_grp, target_cols=target_cols
+                    )
                 elif op._id in self.df_ops:
-                    gdf = self.df_ops[op._id].apply_op(gdf, self.stats, self.columns_ctx, cols_grp, target_cols=target_cols)
+                    gdf = self.df_ops[op._id].apply_op(
+                        gdf,
+                        self.stats,
+                        self.columns_ctx,
+                        cols_grp,
+                        target_cols=target_cols,
+                    )
         return gdf
 
     def clear_stats(self):
@@ -508,13 +550,12 @@ class Preprocessor:
                         gdf, self.cont_names, self.cat_names, self.label_name
                     )
                 gdf = self.apply_ops(gdf)
-                
-            cat_names = self.columns_ctx['final']['cols']['categorical']
-            cont_names = self.columns_ctx['final']['cols']['continuous']
-            label_name = self.columns_ctx['final']['cols']['label']
+
+            cat_names = self.columns_ctx["final"]["cols"]["categorical"]
+            cont_names = self.columns_ctx["final"]["cols"]["continuous"]
+            label_name = self.columns_ctx["final"]["cols"]["label"]
 
             gdf_cats, gdf_conts, gdf_label = (
-                
                 gdf[cat_names],
                 gdf[cont_names],
                 gdf[label_name],

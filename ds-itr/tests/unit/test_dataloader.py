@@ -92,7 +92,7 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         columns = mycols_csv
     cont_names = ["x", "y", "id"]
     label_name = ["label"]
-    
+
     config = pp.get_new_config()
     config["FE"]["continuous"] = [ops.MinMax()]
     config["PP"]["continuous"] = [[ops.FillMissing(), ops.Normalize()]]
@@ -125,15 +125,23 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         ser_median = tar.dropna().quantile(0.5, interpolation="linear")
         gdf = tar.fillna(ser_median)
         return gdf
+
     # Check mean and std - No good right now we have to add all other changes; Zerofill, Log
-    
-    assert math.isclose(get_norms(df.x).mean(), processor.stats["means"]["x_FillMissing"], rel_tol=1e-4)
-    assert math.isclose(get_norms(df.y).mean(), processor.stats["means"]["y_FillMissing"], rel_tol=1e-4)
-#     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_FillMissing"], rel_tol=1e-4)
-    assert math.isclose(get_norms(df.x).std(), processor.stats["stds"]["x_FillMissing"], rel_tol=1e-3)
-    assert math.isclose(get_norms(df.y).std(), processor.stats["stds"]["y_FillMissing"], rel_tol=1e-3)
-#     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_FillMissing"], rel_tol=1e-3)
-    
+
+    assert math.isclose(
+        get_norms(df.x).mean(), processor.stats["means"]["x_FillMissing"], rel_tol=1e-4
+    )
+    assert math.isclose(
+        get_norms(df.y).mean(), processor.stats["means"]["y_FillMissing"], rel_tol=1e-4
+    )
+    #     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_FillMissing"], rel_tol=1e-4)
+    assert math.isclose(
+        get_norms(df.x).std(), processor.stats["stds"]["x_FillMissing"], rel_tol=1e-3
+    )
+    assert math.isclose(
+        get_norms(df.y).std(), processor.stats["stds"]["y_FillMissing"], rel_tol=1e-3
+    )
+    #     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_FillMissing"], rel_tol=1e-3)
 
     # Check median (TODO: Improve the accuracy)
     x_median = df.x.dropna().quantile(0.5, interpolation="linear")
@@ -177,7 +185,7 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         )
         for x in glob.glob(str(tmpdir) + "/ds_part.*.parquet")
     ]
-    
+
     data_itr = torch.utils.data.ChainDataset(data_files)
     dl = bl.DLDataLoader(
         data_itr, collate_fn=dlc.gdf_col, pin_memory=False, num_workers=0

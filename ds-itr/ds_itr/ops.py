@@ -6,14 +6,11 @@ from ds_itr.dl_encoder import DLLabelEncoder
 from ds_itr.ds_writer import DatasetWriter
 
 
-
-    
-
 class Operator:
-    columns=None
-    
+    columns = None
+
     def __init__(self, columns=columns):
-        self.columns=columns
+        self.columns = columns
 
     @property
     def _id(self):
@@ -21,7 +18,7 @@ class Operator:
 
     def describe(self):
         raise NotImplementedError("All operators must have a desription.")
-        
+
     def get_columns(self, cols_ctx, cols_grp, target_cols):
         # providing any operator with direct list of columns overwrites cols dict
         # burden on user to ensure columns exist in dataset (as discussed)
@@ -33,58 +30,60 @@ class Operator:
                 tar_cols = tar_cols + cols_ctx[cols_grp][tar]
         return tar_cols
 
+
 class TransformOperator(Operator):
     fin_cols = False
     replace = False
     default_in = None
     default_out = None
-    
-    def __init__(self, columns=None, preprocessing=True, replace=False, default_in=None, default_out=None):
+
+    def __init__(
+        self,
+        columns=None,
+        preprocessing=True,
+        replace=False,
+        default_in=None,
+        default_out=None,
+    ):
         super().__init__(columns=columns)
         self.preprocessing = preprocessing
         self.replace = replace
-    
+
     @property
     def default_in(self):
         if self.default_in:
             return self.default_in
-        raise NotImplementedError("All Operators must have a default input set of columns (categorical or continuous).")
-    
+        raise NotImplementedError(
+            "All Operators must have a default input set of columns (categorical or continuous)."
+        )
+
     @property
     def default_out(self):
         if self.default_out:
             return self.default_out
-        raise NotImplementedError("All Operators must have a default output set of columns (categorical or continuous).")
+        raise NotImplementedError(
+            "All Operators must have a default output set of columns (categorical or continuous)."
+        )
 
-    
     def apply_op(
-        self,
-        gdf: cudf.DataFrame,
-        columns_ctx: dict,
-        input_cols, 
-        target_cols='base'
+        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base"
     ):
         raise NotImplementedError(
             """The operation to be applied on the data frame chunk, given the required statistics.
                 """
-        )    
+        )
 
 
 class DFOperator(TransformOperator):
-
     def required_stats(self):
         raise NotImplementedError(
             "Should consist of a list of identifiers, that should map to available statistics"
         )
 
-class StatOperator(Operator):
 
+class StatOperator(Operator):
     def read_itr(
-        self,
-        gdf: cudf.DataFrame,
-        columns_ctx: dict,
-        input_cols, 
-        target_cols='base'
+        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base"
     ):
         raise NotImplementedError(
             """The operation to conduct on the dataframe to observe the desired statistics."""
@@ -121,7 +120,7 @@ class MinMax(StatOperator):
     maxs = {}
 
     def apply_op(
-        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols='base'
+        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base"
     ):
         """ Iteration level Min Max collection, a chunk at a time
         """
@@ -174,11 +173,11 @@ class Moments(StatOperator):
     stds = {}
 
     def apply_op(
-        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols='base'
+        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base"
     ):
         """ Iteration-level moment algorithm (mean/std).
         """
-        cols = self.get_columns(columns_ctx, input_cols, target_cols) 
+        cols = self.get_columns(columns_ctx, input_cols, target_cols)
         for col in cols:
             if col not in self.counts:
                 self.counts[col] = 0.0
@@ -244,7 +243,7 @@ class Median(StatOperator):
         self.fill = fill
 
     def apply_op(
-        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols='base'
+        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base"
     ):
         """ Iteration-level median algorithm.
         """
@@ -290,7 +289,7 @@ class Encoder(StatOperator):
     categories = {}
 
     def apply_op(
-        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols='base'
+        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base"
     ):
         """ Iteration-level categorical encoder update.
         """
@@ -329,7 +328,15 @@ class Encoder(StatOperator):
 
 
 class Export(TransformOperator):
-    def __init__(self, path='./ds_export', nfiles=1, shuffle=True, columns=None, preprocessing=False, replace=False):
+    def __init__(
+        self,
+        path="./ds_export",
+        nfiles=1,
+        shuffle=True,
+        columns=None,
+        preprocessing=False,
+        replace=False,
+    ):
         super().__init__(columns=columns, preprocessing=preprocessing, replace=replace)
         self.path = path
         if not os.path.exists(path):
@@ -338,7 +345,7 @@ class Export(TransformOperator):
         self.shuffle = True
 
     def apply_op(
-        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols='base'
+        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base"
     ):
         gdf.to_parquet(self.path)
         return gdf
@@ -346,7 +353,7 @@ class Export(TransformOperator):
 
 class ZeroFill(TransformOperator):
     def apply_op(
-        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols='base'
+        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base"
     ):
         new_key = self._id
         columns_ctx[input_cols][new_key] = []
@@ -355,14 +362,14 @@ class ZeroFill(TransformOperator):
             return gdf
         z_gdf = gdf[cont_names].fillna(0)
         z_gdf.columns = [f"{col}_{self._id}" for col in z_gdf.columns]
-        z_gdf = z_gdf * (z_gdf>=0).astype("int")
+        z_gdf = z_gdf * (z_gdf >= 0).astype("int")
         columns_ctx[input_cols][new_key] = list(z_gdf.columns)
         return cudf.concat([gdf, z_gdf], axis=1)
 
 
 class LogOp(TransformOperator):
     def apply_op(
-        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols='base'
+        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base"
     ):
         new_key = self._id
         columns_ctx[input_cols][new_key] = []
@@ -370,7 +377,7 @@ class LogOp(TransformOperator):
         if not cont_names:
             return gdf
         new_gdf = np.log(gdf[cont_names].astype(np.float32) + 1)
-        new_cols = [f"{col}_{self._id}"for col in new_gdf.columns]
+        new_cols = [f"{col}_{self._id}" for col in new_gdf.columns]
         new_gdf.columns = new_cols
         columns_ctx[input_cols][new_key] = list(new_cols)
         gdf = cudf.concat([gdf, new_gdf], axis=1)
@@ -386,7 +393,12 @@ class Normalize(DFOperator):
         return [Moments()]
 
     def apply_op(
-        self, gdf: cudf.DataFrame, stats_context:dict, columns_ctx: dict, input_cols, target_cols='base'
+        self,
+        gdf: cudf.DataFrame,
+        stats_context: dict,
+        columns_ctx: dict,
+        input_cols,
+        target_cols="base",
     ):
         cont_names = self.get_columns(columns_ctx, input_cols, target_cols)
         new_key = self._id
@@ -414,7 +426,15 @@ class FillMissing(DFOperator):
     MEDIAN = "median"
     CONSTANT = "constant"
 
-    def __init__(self, fill_strategy=MEDIAN, fill_val=0, add_col=False, columns=None, final_cols=False, replace=False):
+    def __init__(
+        self,
+        fill_strategy=MEDIAN,
+        fill_val=0,
+        add_col=False,
+        columns=None,
+        final_cols=False,
+        replace=False,
+    ):
         self.fill_strategy = fill_strategy
         self.fill_val = fill_val
         self.add_col = add_col
@@ -425,7 +445,12 @@ class FillMissing(DFOperator):
         return [Median()]
 
     def apply_op(
-        self, gdf: cudf.DataFrame, stats_context:dict, columns_ctx: dict, input_cols, target_cols='base'
+        self,
+        gdf: cudf.DataFrame,
+        stats_context: dict,
+        columns_ctx: dict,
+        input_cols,
+        target_cols="base",
     ):
         new_key = self._id
         columns_ctx[input_cols][new_key] = []
@@ -466,7 +491,12 @@ class Categorify(DFOperator):
         return [Encoder()]
 
     def apply_op(
-        self, gdf: cudf.DataFrame, stats_context:dict, columns_ctx: dict, input_cols, target_cols='base'
+        self,
+        gdf: cudf.DataFrame,
+        stats_context: dict,
+        columns_ctx: dict,
+        input_cols,
+        target_cols="base",
     ):
         new_key = self._id
         columns_ctx[input_cols][new_key] = []
@@ -482,9 +512,8 @@ class Categorify(DFOperator):
             gdf[new_col] = gdf[new_col].astype("int64")
         columns_ctx[input_cols][new_key] = list(new_cols)
         return gdf
-    
 
-    def get_emb_sz(self, encoders, cat_names):    
+    def get_emb_sz(self, encoders, cat_names):
         work_in = {}
         for key in encoders.keys():
             work_in[key] = encoders[key] + 1
@@ -502,17 +531,17 @@ class Categorify(DFOperator):
         sz = sz_dict.get(n, int(self.emb_sz_rule(n_cat)))  # rule of thumb
         self.embed_sz[n] = sz
         return n_cat, sz
-    
+
 
 all_ops = {
     MinMax()._id: MinMax(),
-    Moments()._id: Moments(), 
-    Median()._id: Median(), 
-    Encoder()._id: Encoder(), 
-    Export()._id: Export(), 
+    Moments()._id: Moments(),
+    Median()._id: Median(),
+    Encoder()._id: Encoder(),
+    Export()._id: Export(),
     ZeroFill()._id: ZeroFill(),
     LogOp()._id: LogOp(),
     Normalize()._id: Normalize(),
     FillMissing()._id: FillMissing(),
-    Categorify()._id: Categorify()
+    Categorify()._id: Categorify(),
 }

@@ -48,7 +48,7 @@ def test_minmax(tmpdir, datasets, gpu_memory_frac, engine):
 
     config = pp.get_new_config()
     config["PP"]["all"] = [ops.MinMax()]
-    
+
     processor = pp.Preprocessor(
         cat_names=cat_names,
         cont_names=cont_names,
@@ -108,7 +108,7 @@ def test_moments(tmpdir, datasets, gpu_memory_frac, engine):
 
     config = pp.get_new_config()
     config["PP"]["continuous"] = [ops.Moments()]
-    
+
     processor = pp.Preprocessor(
         cat_names=cat_names,
         cont_names=cont_names,
@@ -160,7 +160,7 @@ def test_encoder(tmpdir, datasets, gpu_memory_frac, engine):
         gpu_memory_frac=gpu_memory_frac,
         names=allcols_csv,
     )
-    
+
     config = pp.get_new_config()
     config["PP"]["categorical"] = [ops.Encoder()]
 
@@ -216,7 +216,7 @@ def test_median(tmpdir, datasets, gpu_memory_frac, engine):
         gpu_memory_frac=gpu_memory_frac,
         names=allcols_csv,
     )
-    
+
     config = pp.get_new_config()
     config["PP"]["continuous"] = [ops.Median()]
 
@@ -273,12 +273,11 @@ def test_log(tmpdir, datasets, gpu_memory_frac, engine):
     )
 
     log_op = ops.LogOp()
-    
+
     columns_ctx = {}
-    columns_ctx['continuous'] = {}
-    columns_ctx['continuous']['base'] = cont_names
-    
+    columns_ctx["continuous"] = {}
+    columns_ctx["continuous"]["base"] = cont_names
 
     for gdf in data_itr:
-        new_gdf = log_op.apply_op(gdf, columns_ctx, 'continuous')
+        new_gdf = log_op.apply_op(gdf, columns_ctx, "continuous")
         assert new_gdf[cont_names] == np.log(gdf[cont_names].astype(np.float32))

@@ -27,14 +27,17 @@ class DLLabelEncoder(object):
         # required because cudf.series does not compute bool type
         self._cats = cats if type(cats) == cudf.Series else cudf.Series([cats])
         # writer needs to be mapped to same file in folder.
-        self.path = path or os.path.join(os.getcwd(), 'label_encoders')
+        self.path = path or os.path.join(os.getcwd(), "label_encoders")
         self.folder_path = os.path.join(self.path, col)
         self.file_paths = file_paths or []
         # incase there are files already in the directory, ignored
         self.ignore_files = []
         if os.path.exists(self.folder_path):
-            self.ignore_files = [os.path.join(self.folder_path, x) for x in os.listdir(self.folder_path) if x.endswith("parquet") and x not in self.file_paths
-                ]
+            self.ignore_files = [
+                os.path.join(self.folder_path, x)
+                for x in os.listdir(self.folder_path)
+                if x.endswith("parquet") and x not in self.file_paths
+            ]
         self.col = col
         self.limit_frac = limit_frac
         self.cat_exp_count = 0
@@ -64,7 +67,12 @@ class DLLabelEncoder(object):
         encoded = None
         if os.path.exists(self.folder_path) and self.file_paths:
             # some cats in memory some in disk
-            file_paths = [os.path.join(self.folder_path, x) for x in os.listdir(self.folder_path) if x.endswith("parquet") and x not in self.file_paths and x not in self.ignore_files
+            file_paths = [
+                os.path.join(self.folder_path, x)
+                for x in os.listdir(self.folder_path)
+                if x.endswith("parquet")
+                and x not in self.file_paths
+                and x not in self.ignore_files
             ]
             self.file_paths.extend(file_paths)
             self.file_paths = list(set(self.file_paths))
@@ -80,13 +88,15 @@ class DLLabelEncoder(object):
                         y.label_encoding(chunk[self.col], na_sentinel=0)
                     )
                     # added ref count to all values over zero in series
-                    part_encoded = part_encoded + (part_encoded>0).astype("int") * rec_count
+                    part_encoded = (
+                        part_encoded + (part_encoded > 0).astype("int") * rec_count
+                    )
                     # continually add chunks to encoded to get full batch
                     encoded = (
                         part_encoded if encoded.empty else encoded.add(part_encoded)
                     )
                     rec_count = rec_count + len(chunk)
-                    
+
         else:
             # all cats in memory
             encoded = cudf.Series(y.label_encoding(self._cats, na_sentinel=0))
@@ -105,10 +115,12 @@ class DLLabelEncoder(object):
         else:
             self._cats = self._cats.append(self.one_cycle(y)).unique()
         # check if enough space to leave in gpu memory if category doubles in size
-        
-        if self.series_size(self._cats) > (
-            numba.cuda.current_context().get_memory_info()[0] * self.limit_frac
-        ) and not self._cats.empty:
+
+        if (
+            self.series_size(self._cats)
+            > (numba.cuda.current_context().get_memory_info()[0] * self.limit_frac)
+            and not self._cats.empty
+        ):
             # first time dumping into file
             if not os.path.exists(self.folder_path):
                 os.makedirs(self.folder_path)
@@ -128,19 +140,26 @@ class DLLabelEncoder(object):
         self.cat_exp_count = self.cat_exp_count + x.shape[0]
         x.to_parquet(self.folder_path)
         self._cats = cudf.Series()
-        #should find new file just exported
-        new_file_path = [os.path.join(self.folder_path, x) for x in os.listdir(self.folder_path) if x.endswith("parquet") and x not in self.file_paths and x not in self.ignore_files
-            ]
+        # should find new file just exported
+        new_file_path = [
+            os.path.join(self.folder_path, x)
+            for x in os.listdir(self.folder_path)
+            if x.endswith("parquet")
+            and x not in self.file_paths
+            and x not in self.ignore_files
+        ]
         # add file to list
         self.file_paths.extend(new_file_path)
         self.file_paths = list(set(self.file_paths))
-        
 
     def one_cycle(self, compr):
         # compr is already a list of unique values to check against
         if os.path.exists(self.folder_path):
             file_paths = [
-                os.path.join(self.folder_path, x) for x in os.listdir(self.folder_path) if x.endswith("parquet") and x not in self.file_paths + self.ignore_files
+                os.path.join(self.folder_path, x)
+                for x in os.listdir(self.folder_path)
+                if x.endswith("parquet")
+                and x not in self.file_paths + self.ignore_files
             ]
             if file_paths:
                 chunks = ds_itr.GPUDatasetIterator(file_paths)
@@ -150,8 +169,8 @@ class DLLabelEncoder(object):
                         # if nothing is left to compare... bug out
                         break
         return compr
-    
-    
 
     def __repr__(self):
-        return ("{0}(_cats={1!r})".format(type(self).__name__, self._cats.values_to_string()))
+        return "{0}(_cats={1!r})".format(
+            type(self).__name__, self._cats.values_to_string()
+        )
