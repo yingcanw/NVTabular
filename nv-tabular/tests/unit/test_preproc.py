@@ -459,10 +459,10 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine):
         to_cpu=False,
     )
     
-    processor.add_feature([ops.FillMissing(default_in='continuous', default_out='continuous'), ops.LogOp(default_in='continuous', default_out='continuous')])
+    processor.add_feature([ops.FillMissing(), ops.LogOp()])
 #     processor.add_feature()
-    processor.add_preprocess(ops.Normalize(default_in='continuous', default_out='continuous'))
-    processor.add_preprocess(ops.Categorify(default_in='categorical', default_out='categorical'))
+    processor.add_preprocess(ops.Normalize())
+    processor.add_preprocess(ops.Categorify())
     processor.finalize()
     
     data_itr = ds.GPUDatasetIterator(
@@ -470,7 +470,7 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine):
         columns=columns,
         use_row_groups=True,
         gpu_memory_frac=gpu_memory_frac,
-        names=allcols_csv,
+        names=allcols_csv
     )
 
     processor.update_stats(data_itr)
@@ -490,11 +490,11 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine):
     # Check mean and std - No good right now we have to add all other changes; Zerofill, Log
 
     
-    assert math.isclose(get_norms(df.x).mean(), processor.stats["means"]["x_FillMissing_LogOp"], rel_tol=1e-3)
-    assert math.isclose(get_norms(df.y).mean(), processor.stats["means"]["y_FillMissing_LogOp"], rel_tol=1e-3)
+    assert math.isclose(get_norms(df.x).mean(), processor.stats["means"]["x_FillMissing_LogOp"], rel_tol=1e-2)
+    assert math.isclose(get_norms(df.y).mean(), processor.stats["means"]["y_FillMissing_LogOp"], rel_tol=1e-2)
 #     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_FillMissing_LogOp"], rel_tol=1e-4)
-    assert math.isclose(get_norms(df.x).std(), processor.stats["stds"]["x_FillMissing_LogOp"], rel_tol=1e-3)
-    assert math.isclose(get_norms(df.y).std(), processor.stats["stds"]["y_FillMissing_LogOp"], rel_tol=1e-3)
+    assert math.isclose(get_norms(df.x).std(), processor.stats["stds"]["x_FillMissing_LogOp"], rel_tol=1e-2)
+    assert math.isclose(get_norms(df.y).std(), processor.stats["stds"]["y_FillMissing_LogOp"], rel_tol=1e-2)
 #     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_FillMissing_LogOp"], rel_tol=1e-3)
 
 

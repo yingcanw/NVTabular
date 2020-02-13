@@ -100,6 +100,7 @@ class PQFileReader(GPUFileReader):
         self.row_size = self.row_size or 0
         if self.num_rows > 0 and self.row_size == 0:
             for col in self.reader(self.file, num_rows=1)._columns:
+                
                 self.row_size += col.dtype.itemsize
             self.file.seek(0)
         # Check if wwe are using row groups
