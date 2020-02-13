@@ -1,5 +1,8 @@
-import ds_itr.dl_encoder as encoder
-import ds_itr.ds_iterator as ds
+import nv_tabular.preproc as pp
+import nv_tabular.ops as ops
+import nv_tabular.dl_encoder as encoder
+import nv_tabular.ds_iterator as ds
+import nv_tabular.batchloader as bl
 import cudf
 import pytest
 import torch

@@ -1,7 +1,7 @@
-import ds_itr.ds_iterator as ds
-import ds_itr.dl_encoder as encoder
-import ds_itr.preproc as pp
-import ds_itr.ops as ops
+import nv_tabular.preproc as pp
+import nv_tabular.ops as ops
+import nv_tabular.dl_encoder as encoder
+import nv_tabular.ds_iterator as ds
 import cudf
 import numpy as np
 from cudf.tests.utils import assert_eq

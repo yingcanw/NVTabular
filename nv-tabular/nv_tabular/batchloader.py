@@ -3,7 +3,7 @@ from torch import _utils
 from fastai.torch_core import to_device
 import cudf
 from torch.utils.dlpack import from_dlpack
-from ds_itr.ds_iterator import GPUFileIterator
+from nv_tabular.ds_iterator import GPUFileIterator
 
 
 class FileItrDataset(torch.utils.data.IterableDataset):
@@ -136,28 +136,22 @@ class DLCollator:
         preproc=None,
         cat_names=None,
         cont_names=None,
-        label_name=None,
+        label_name=None
     ):
         self.transform = transform
         self.preproc = preproc
         if self.preproc:
-            cat_names_key = self.preproc.columns_ctx["final"]["ctx"]["categorical"]
-            cont_names_key = self.preproc.columns_ctx["final"]["ctx"]["continuous"]
-            label_name_key = self.preproc.columns_ctx["final"]["ctx"]["label"]
+            cat_names_key = self.preproc.columns_ctx['final']['ctx']['categorical']
+            cont_names_key = self.preproc.columns_ctx['final']['ctx']['continuous']
+            label_name_key = self.preproc.columns_ctx['final']['ctx']['label']
             for key in cat_names_key:
-                self.cat_names = (
-                    self.cat_names + self.preproc.columns_ctx["categorical"][key]
-                )
+                self.cat_names = self.cat_names + self.preproc.columns_ctx['categorical'][key]
             for key in cont_names_key:
-                self.cont_names = (
-                    self.cont_names + self.preproc.columns_ctx["continuous"][key]
-                )
+                self.cont_names = self.cont_names + self.preproc.columns_ctx['continuous'][key]
             for key in label_name_key:
-                if key in "label":
-                    key = "base"
-                self.label_name = (
-                    self.label_name + self.preproc.columns_ctx["label"][key]
-                )
+                if key in 'label':
+                    key = 'base'
+                self.label_name = self.label_name + self.preproc.columns_ctx['label'][key]
             self.cat_names = list(set(self.cat_names))
             self.cont_names = list(set(self.cont_names))
             self.label_name = list(set(self.label_name))
@@ -168,7 +162,11 @@ class DLCollator:
 
     def gdf_col(self, gdf):
         batch = self.transform(
-            gdf, self.preproc, self.cat_names, self.cont_names, self.label_name,
+            gdf,
+            self.preproc,
+            self.cat_names,
+            self.cont_names,
+            self.label_name,
         )
         return (batch[0], batch[1]), batch[2].long()
 

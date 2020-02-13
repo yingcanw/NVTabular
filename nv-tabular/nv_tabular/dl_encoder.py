@@ -2,8 +2,8 @@ import numpy as np
 import cudf
 import rmm
 import numba
-import ds_itr.ds_iterator as ds_itr
-import ds_itr.ds_writer as ds_wtr
+import nv_tabular.ds_iterator as ds_itr
+import nv_tabular.ds_writer as ds_wtr
 import os
 
 

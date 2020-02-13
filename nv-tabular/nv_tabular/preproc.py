@@ -3,10 +3,10 @@ import warnings
 
 import numpy as np
 import cudf
-from ds_itr.ds_iterator import GPUDatasetIterator
-from ds_itr.dl_encoder import DLLabelEncoder
-from ds_itr.ds_writer import DatasetWriter
-from ds_itr.ops import *
+from nv_tabular.ds_iterator import GPUDatasetIterator
+from nv_tabular.dl_encoder import DLLabelEncoder
+from nv_tabular.ds_writer import DatasetWriter
+from nv_tabular.ops import *
 
 try:
     import cupy as cp
@@ -29,7 +29,6 @@ def get_new_config():
     config["PP"]["categorical"] = {}
     return config
 
-
 def get_new_list_config():
     """
     boiler config object, to be filled in with targeted operator tasks
@@ -44,6 +43,7 @@ def get_new_list_config():
     config["PP"]["continuous"] = []
     config["PP"]["categorical"] = []
     return config
+
 
 
 def _shuffle_part(gdf):
@@ -105,7 +105,7 @@ class Preprocessor:
         else:
             target_cols = operators.get_default_in()
         return target_cols
-
+        
     def config_add_ops(self, operators, phase):
         target_cols = self.get_tar_cols(operators)
         if phase in self.config and target_cols in self.config[phase]:
@@ -113,7 +113,7 @@ class Preprocessor:
             # maybe should be list always to make downstream easier
             self.config[phase][target_cols].append(operators)
             return
-
+        
         warnings.warn(f"No main key {phase} or sub key {target_cols} found in config")
 
     def add_feature(self, operators):
@@ -122,8 +122,8 @@ class Preprocessor:
     def add_preprocess(self, operators):
         # must add last operator from FE for get_default_in
         target_cols = self.get_tar_cols(operators)
-        if self.config["FE"][target_cols]:
-            op_to_add = self.config["FE"][target_cols][-1]
+        if self.config['FE'][target_cols]:
+            op_to_add = self.config['FE'][target_cols][-1]
         else:
             op_to_add = []
         if type(op_to_add) is list and op_to_add:
