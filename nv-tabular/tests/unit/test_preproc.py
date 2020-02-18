@@ -138,7 +138,7 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
 #     config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
 #     config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.ZeroFill()._id]]}]
 
-    processor = pp.Preprocessor(
+    processor = pp.Workflow(
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,
@@ -229,7 +229,7 @@ def test_pq_to_pq_processed(tmpdir, datasets):
 #     config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
 #     config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.FillMissing()._id]]}]
     
-    processor = pp.Preprocessor(
+    processor = pp.Workflow(
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,
@@ -350,7 +350,7 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
 #     config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.LogOp()._id]]}]
     
 
-    processor = pp.Preprocessor(
+    processor = pp.Workflow(
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,
@@ -452,7 +452,7 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine):
     cont_names = ["x", "y", "id"]
     label_name = ["label"]
 
-    processor = pp.Preprocessor(
+    processor = pp.Workflow(
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,

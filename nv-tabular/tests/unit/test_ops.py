@@ -51,7 +51,7 @@ def test_minmax(tmpdir, datasets, gpu_memory_frac, engine):
     config = pp.get_new_config()
     config["PP"]["all"] = [ops.MinMax()]
 
-    processor = pp.Preprocessor(
+    processor = pp.Workflow(
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,
@@ -111,7 +111,7 @@ def test_moments(tmpdir, datasets, gpu_memory_frac, engine):
     config = pp.get_new_config()
     config["PP"]["continuous"] = [ops.Moments()]
 
-    processor = pp.Preprocessor(
+    processor = pp.Workflow(
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,
@@ -166,7 +166,7 @@ def test_encoder(tmpdir, datasets, gpu_memory_frac, engine):
     config = pp.get_new_config()
     config["PP"]["categorical"] = [ops.Encoder()]
 
-    processor = pp.Preprocessor(
+    processor = pp.Workflow(
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,
@@ -222,7 +222,7 @@ def test_median(tmpdir, datasets, gpu_memory_frac, engine):
     config = pp.get_new_config()
     config["PP"]["continuous"] = [ops.Median()]
 
-    processor = pp.Preprocessor(
+    processor = pp.Workflow(
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,

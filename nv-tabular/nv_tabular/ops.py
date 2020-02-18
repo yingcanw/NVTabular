@@ -73,6 +73,8 @@ class TransformOperator(Operator):
             input_cols = self.default_out
         columns_ctx[input_cols][new_key] = []
         columns_ctx[input_cols][new_key] = list(new_cols)
+        if not self.preprocessing:
+            columns_ctx["final"]["ctx"][input_cols].append(self._id)
 
     
     def apply_op(
@@ -386,7 +388,6 @@ class LogOp(TransformOperator):
     def apply_op(
         self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols='base'
     ):
-
         cont_names = self.get_columns(columns_ctx, input_cols, target_cols)
         if not cont_names:
             return gdf

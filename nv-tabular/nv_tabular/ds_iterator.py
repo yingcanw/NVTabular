@@ -129,31 +129,31 @@ class PQFileReader(GPUFileReader):
                 self.row_group_batch = max(int(gpu_memory_batch / rg_size), 1)
 
     def read_file_batch(self, nskip=0, columns=None, **kwargs):
-        if self.use_row_groups:
-            row_group_batch = min(
-                self.row_group_batch, self.num_row_groups - self.next_row_group
-            )
-            chunk = cudf.DataFrame()
-            for i in range(row_group_batch):
-                add_chunk = self.reader(
-                    self.file_path,
-                    row_group=self.next_row_group,
-                    engine="cudf",
-                    columns=columns,
-                )
-                self.next_row_group += 1
-                chunk = cudf.concat([chunk, add_chunk], axis=0) if chunk else add_chunk
-                del add_chunk
-            return chunk.reset_index(drop=True)
-        else:
-            batch = min(self.batch_size, self.num_rows - nskip)
-            return self.reader(
-                self.file_path,
-                num_rows=batch,
-                skip_rows=nskip,
-                engine="cudf",
-                columns=columns,
-            )
+#         if self.use_row_groups:
+#             row_group_batch = min(
+#                 self.row_group_batch, self.num_row_groups - self.next_row_group
+#             )
+#             chunk = cudf.DataFrame()
+#             for i in range(row_group_batch):
+#                 add_chunk = self.reader(
+#                     self.file_path,
+#                     row_group=self.next_row_group,
+#                     engine="cudf",
+#                     columns=columns,
+#                 )
+#                 self.next_row_group += 1
+#                 chunk = cudf.concat([chunk, add_chunk], axis=0) if chunk else add_chunk
+#                 del add_chunk
+#             return chunk.reset_index(drop=True)
+#         else:
+        batch = min(self.batch_size, self.num_rows - nskip)
+        return self.reader(
+            self.file_path,
+            num_rows=batch,
+            skip_rows=nskip,
+            engine="cudf",
+            columns=columns,
+        )
 
 
 class CSVFileReader(GPUFileReader):

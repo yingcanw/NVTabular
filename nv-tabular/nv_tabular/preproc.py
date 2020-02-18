@@ -54,7 +54,7 @@ def _shuffle_part(gdf):
     return gdf.sort_values(sort_key).drop(columns=[sort_key])
 
 
-class Preprocessor:
+class Workflow:
     def __init__(
         self,
         cat_names=None,
@@ -107,6 +107,14 @@ class Preprocessor:
         return target_cols
         
     def config_add_ops(self, operators, phase):
+        """
+        operators: list of operators or single operator, Op/s to be 
+                   added into the preprocessing phase
+        phase: identifier for feature engineering FE or preprocessing PP
+        ---
+        This function serves to translate the operator list api into backend
+        ready dependency dictionary.
+        """
         target_cols = self.get_tar_cols(operators)
         if phase in self.config and target_cols in self.config[phase]:
             # append operator as single ent1ry or as a list
@@ -120,6 +128,13 @@ class Preprocessor:
         self.config_add_ops(operators, "FE")
 
     def add_preprocess(self, operators):
+        """
+        operator: list of operators or single operator, Op/s to be 
+                  added into the preprocessing phase
+        ---
+        This function adds the preprocessing operators, while mapping 
+        to the correct columns given operator dependencies
+        """
         # must add last operator from FE for get_default_in
         target_cols = self.get_tar_cols(operators)
         if self.config['FE'][target_cols]:
@@ -141,19 +156,33 @@ class Preprocessor:
             self.reg_funcs[tup[0].__class__.__base__]([tup[0]])
 
     def finalize(self):
+        """
+        When using operator list api, this allows the user to declare they
+        have finished adding all operators and are ready to start processing
+        data.
+        """
         self.load_config(self.config)
 
     def reg_feat_ops(self, feat_ops):
+        """
+        Register Feature engineering operators
+        """
         for feat_op in feat_ops:
             self.feat_ops[feat_op._id] = feat_op
 
     def reg_df_ops(self, df_ops):
+        """
+        Register preprocessing operators
+        """
         for df_op in df_ops:
             dfop_id, dfop_rs = df_op._id, df_op.req_stats
             self.reg_stat_ops(dfop_rs)
             self.df_ops[dfop_id] = df_op
 
     def reg_stat_ops(self, stat_ops):
+        """
+        Register statistical operators
+        """
         for stat_op in stat_ops:
             # pull stats, ensure no duplicates
             for stat in stat_op.registered_stats():
@@ -223,6 +252,14 @@ class Preprocessor:
         )
 
     def load_config(self, config, pro=False):
+        """
+        config: Dictionary, this object contains the phases and user specified operators
+        pro: Bool, used to signal if config should be parsed via dependency dictionary 
+             or operator list api
+        ---
+        This function extracts all the operators from the given phases and produces a 
+        set of phases with necessary operators to complete configured pipeline. 
+        """
         # separate FE and PP
         if not pro:
             config = self.compile_dict_from_list(config)
@@ -240,6 +277,10 @@ class Preprocessor:
         self.create_final_col_refs()
 
     def remove_dupes(self):
+        """
+        After the master task list is created this function removes any duplicate version 
+        of statistical operators that may be required by more than one operator.
+        """
         for idx, ptask in enumerate(self.master_task_list):
             for sdx, stask in enumerate(self.master_task_list):
                 # if you find it again later in the list remove it
@@ -247,6 +288,13 @@ class Preprocessor:
                     self.master_task_list.remove(stask)
 
     def phase_creator(self, task_list):
+        """
+        task_list: list, phase specific list of operators and dependencies
+        ---
+        This function splits the operators in the task list and adds in any
+        dependent operators i.e. statistical operators required by selected
+        operators.
+        """
         trans_op = False
         for task in task_list:
             added = False
@@ -270,6 +318,9 @@ class Preprocessor:
                 self.phases.append([task])
 
     def phases_export(self):
+        """
+        Export each phase from the dependency dictionary.
+        """
         for idx, phase in enumerate(self.phases[:-1]):
             trans_op = False
             for task in phase:
@@ -298,6 +349,12 @@ class Preprocessor:
             return True
 
     def sort_task_types(self, master_list):
+        """
+        master_list: a complete list of all necessary operators to complete specified pipeline
+        ----
+        This function helps ordering and breaking up the master list of operators into the 
+        correct phases.
+        """
         nodeps = []
         for tup in master_list:
             if "base" in tup[2]:
@@ -308,6 +365,12 @@ class Preprocessor:
         return nodeps, master_list
 
     def compile_dict_from_list(self, task_list_dict):
+        """
+        task_list_dict: dictionary, this dictionary has phases(key) and 
+                        the corresponding list of operators for each phase.
+        This function retrievs all the operators from the different keys in
+        the task_list_dict object.
+        """
         tk_d = {}
         phases = 0
         for phase, task_list in task_list_dict.items():
@@ -319,6 +382,10 @@ class Preprocessor:
         return tk_d
 
     def extract_tasks_dict(self, task_list):
+        """
+        The function serves as a shim that can turn lists of operators
+        into the dictionary dependency format required for processing.
+        """
         # contains a list of lists [[fillmissing, Logop]], Normalize, Categorify]
         task_dicts = []
         for obj in task_list:
@@ -335,20 +402,29 @@ class Preprocessor:
         return task_dicts
 
     def create_final_col_refs(self):
+        """
+        This function creates a reference of all the operators whose produced
+        columns will be available in the final set of columns. First step in 
+        creating the final columns list.
+        """
 
         if "final" in self.columns_ctx.keys():
             return
-        #         self.columns_ctx['final'] = {}
         final = {}
+        # all preprocessing tasks have a parent operator, it could be None
+        # task (operator, main_columns_class, col_sub_key,  required_operators)
         for task in self.task_sets["PP"]:
+            # an operator cannot exist twice
             if not task[1] in final.keys():
                 final[task[1]] = []
+            # detect incorrect dependency loop
             for x in final[task[1]]:
                 if x in task[2]:
                     final[task[1]].remove(x)
+            # stats dont create columns so id would not be in columns ctx
             if not task[0].__class__.__base__ == StatOperator:
                 final[task[1]].append(task[0]._id)
-        # add labels too
+        # add labels too specific because not specifically required in init
         final["label"] = []
         for p_set, col_ctx in self.columns_ctx["label"].items():
             if not final["label"]:
@@ -359,6 +435,13 @@ class Preprocessor:
         self.columns_ctx["final"]["ctx"] = final
 
     def create_final_cols(self):
+        """
+        This function creates an entry in the columns context dictionary,
+        not the references to the operators. In this method we detail all
+        operator references with actual column names, and create a list.
+        The entry represents the final columns that should be in finalized
+        dataframe.
+        """
         # still adding double need to stop that
         final_ctx = {}
         for key, ctx_list in self.columns_ctx["final"]["ctx"].items():

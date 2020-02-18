@@ -1,6 +1,5 @@
 import nv_tabular.preproc as pp
 import nv_tabular.ops as ops
-import nv_tabular.dl_encoder as encoder
 import nv_tabular.ds_iterator as ds
 import nv_tabular.batchloader as bl
 import cudf
@@ -98,7 +97,7 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     config["PP"]["continuous"] = [[ops.FillMissing(), ops.Normalize()]]
     config["PP"]["categorical"] = [ops.Categorify()]
 
-    processor = pp.Preprocessor(
+    processor = pp.Workflow(
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,
