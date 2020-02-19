@@ -24,7 +24,7 @@ def test_dl_encoder_fit_transform_fim(datasets, batch, dskey):
         os.remove(file)
 
 
-@pytest.mark.parametrize("batch", [0])
+@pytest.mark.parametrize("batch", [0, 100, 1000])
 @pytest.mark.parametrize("dskey", ["csv", "csv-no-header"])
 def test_dl_encoder_fit_transform_ltm(datasets, batch, dskey):
     paths = glob.glob(str(datasets[dskey]) + "/*.csv")

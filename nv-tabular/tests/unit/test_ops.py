@@ -19,7 +19,8 @@ import shutil
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
-def test_minmax(tmpdir, datasets, gpu_memory_frac, engine):
+@pytest.mark.parametrize("op_columns", [["x"],None])
+def test_minmax(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
 
     if engine == "parquet":
@@ -49,7 +50,7 @@ def test_minmax(tmpdir, datasets, gpu_memory_frac, engine):
     )
 
     config = pp.get_new_config()
-    config["PP"]["all"] = [ops.MinMax()]
+    config["PP"]["all"] = [ops.MinMax(columns=op_columns)]
 
     processor = pp.Workflow(
         cat_names=cat_names,
@@ -79,7 +80,8 @@ def test_minmax(tmpdir, datasets, gpu_memory_frac, engine):
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
-def test_moments(tmpdir, datasets, gpu_memory_frac, engine):
+@pytest.mark.parametrize("op_columns", [["x"],None])
+def test_moments(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
 
     if engine == "parquet":
@@ -109,7 +111,7 @@ def test_moments(tmpdir, datasets, gpu_memory_frac, engine):
     )
 
     config = pp.get_new_config()
-    config["PP"]["continuous"] = [ops.Moments()]
+    config["PP"]["continuous"] = [ops.Moments(columns=op_columns)]
 
     processor = pp.Workflow(
         cat_names=cat_names,
@@ -134,7 +136,8 @@ def test_moments(tmpdir, datasets, gpu_memory_frac, engine):
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
-def test_encoder(tmpdir, datasets, gpu_memory_frac, engine):
+@pytest.mark.parametrize("op_columns", [["name-string"],None])
+def test_encoder(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
 
     if engine == "parquet":
@@ -164,7 +167,7 @@ def test_encoder(tmpdir, datasets, gpu_memory_frac, engine):
     )
 
     config = pp.get_new_config()
-    config["PP"]["categorical"] = [ops.Encoder()]
+    config["PP"]["categorical"] = [ops.Encoder(columns=op_columns)]
 
     processor = pp.Workflow(
         cat_names=cat_names,
@@ -190,7 +193,8 @@ def test_encoder(tmpdir, datasets, gpu_memory_frac, engine):
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
-def test_median(tmpdir, datasets, gpu_memory_frac, engine):
+@pytest.mark.parametrize("op_columns", [["x"],None])
+def test_median(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
 
     if engine == "parquet":
@@ -220,7 +224,7 @@ def test_median(tmpdir, datasets, gpu_memory_frac, engine):
     )
 
     config = pp.get_new_config()
-    config["PP"]["continuous"] = [ops.Median()]
+    config["PP"]["continuous"] = [ops.Median(columns=op_columns)]
 
     processor = pp.Workflow(
         cat_names=cat_names,
@@ -245,7 +249,8 @@ def test_median(tmpdir, datasets, gpu_memory_frac, engine):
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
-def test_log(tmpdir, datasets, gpu_memory_frac, engine):
+@pytest.mark.parametrize("op_columns", [["x"],None])
+def test_log(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
 
     if engine == "parquet":
@@ -274,7 +279,7 @@ def test_log(tmpdir, datasets, gpu_memory_frac, engine):
         names=allcols_csv,
     )
 
-    log_op = ops.LogOp()
+    log_op = ops.LogOp(columns=op_columns)
 
     columns_ctx = {}
     columns_ctx["continuous"] = {}
@@ -282,4 +287,5 @@ def test_log(tmpdir, datasets, gpu_memory_frac, engine):
 
     for gdf in data_itr:
         new_gdf = log_op.apply_op(gdf, columns_ctx, "continuous")
+        import pdb; pdb.set_trace()
         assert new_gdf[cont_names] == np.log(gdf[cont_names].astype(np.float32))

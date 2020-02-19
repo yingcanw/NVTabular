@@ -34,7 +34,14 @@ class Operator:
         tar_cols = []
         for tar in target_cols:
             if tar in cols_ctx[cols_grp].keys():
-                tar_cols = tar_cols + cols_ctx[cols_grp][tar]
+                to_add = None
+                if tar in 'base':
+                    to_add = True
+                else:
+                    op = all_ops[tar]
+                    to_add = op.preprocessing
+                if to_add:
+                    tar_cols = tar_cols + cols_ctx[cols_grp][tar]
         return tar_cols
 
 class TransformOperator(Operator):
@@ -73,7 +80,7 @@ class TransformOperator(Operator):
             input_cols = self.default_out
         columns_ctx[input_cols][new_key] = []
         columns_ctx[input_cols][new_key] = list(new_cols)
-        if not self.preprocessing:
+        if not self.preprocessing and not self._id in columns_ctx["final"]["ctx"][input_cols]:
             columns_ctx["final"]["ctx"][input_cols].append(self._id)
 
     

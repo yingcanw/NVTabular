@@ -153,7 +153,7 @@ class PQFileReader(GPUFileReader):
             skip_rows=nskip,
             engine="cudf",
             columns=columns,
-        )
+        ).reset_index(drop=True)
 
 
 class CSVFileReader(GPUFileReader):

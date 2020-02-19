@@ -65,6 +65,7 @@ class Workflow:
         df_ops=None,
         to_cpu=True,
         config=None,
+        export=False,
         export_path="./ds_export",
     ):
         self.reg_funcs = {
@@ -90,6 +91,7 @@ class Workflow:
         self.task_sets = {}
         self.ds_exports = export_path
         self.to_cpu = to_cpu
+        self.export = export
         if config:
             self.load_config(config)
         else:
@@ -273,7 +275,9 @@ class Workflow:
         baseline, leftovers = self.sort_task_types(self.master_task_list)
         self.phases.append(baseline)
         self.phase_creator(leftovers)
-        self.phases_export()
+        # check if export wanted
+        if self.export:
+            self.phases_export()
         self.create_final_col_refs()
 
     def remove_dupes(self):
@@ -323,6 +327,8 @@ class Workflow:
         """
         for idx, phase in enumerate(self.phases[:-1]):
             trans_op = False
+            # only export if the phase has a transform operator on the dataset
+            # otherwise all stats will be saved in the tabular object
             for task in phase:
                 if isinstance(task[0], TransformOperator):
                     trans_op = True
@@ -548,7 +554,8 @@ class Workflow:
                     op.apply_op(
                         gdf, self.columns_ctx, cols_grp, target_cols=target_cols
                     )
-            # if export is activated combine as many GDFs as possible and then write them out cudf.concat([exp_gdf, gdf], axis=0)
+            # if export is activated combine as many GDFs as possible and 
+            # then write them out cudf.concat([exp_gdf, gdf], axis=0)
         for stat_op in run_stat_ops:
             stat_op.read_fin()
             # missing bubble up to prerprocessor
