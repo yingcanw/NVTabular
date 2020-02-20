@@ -29,6 +29,7 @@ def get_new_config():
     config["PP"]["categorical"] = {}
     return config
 
+
 def get_new_list_config():
     """
     boiler config object, to be filled in with targeted operator tasks
@@ -43,7 +44,6 @@ def get_new_list_config():
     config["PP"]["continuous"] = []
     config["PP"]["categorical"] = []
     return config
-
 
 
 def _shuffle_part(gdf):
@@ -109,7 +109,7 @@ class Workflow:
         else:
             target_cols = operators.get_default_in()
         return target_cols
-        
+
     def config_add_ops(self, operators, phase):
         """
         operators: list of operators or single operator, Op/s to be 
@@ -125,7 +125,7 @@ class Workflow:
             # maybe should be list always to make downstream easier
             self.config[phase][target_cols].append(operators)
             return
-        
+
         warnings.warn(f"No main key {phase} or sub key {target_cols} found in config")
 
     def add_feature(self, operators):
@@ -141,8 +141,8 @@ class Workflow:
         """
         # must add last operator from FE for get_default_in
         target_cols = self.get_tar_cols(operators)
-        if self.config['FE'][target_cols]:
-            op_to_add = self.config['FE'][target_cols][-1]
+        if self.config["FE"][target_cols]:
+            op_to_add = self.config["FE"][target_cols][-1]
         else:
             op_to_add = []
         if type(op_to_add) is list and op_to_add:
@@ -281,7 +281,6 @@ class Workflow:
             self.phases_export()
         self.create_final_col_refs()
 
-        
     def phase_creator(self, task_list):
         """
         task_list: list, phase specific list of operators and dependencies
@@ -387,9 +386,9 @@ class Workflow:
         task_dicts = []
         for obj in task_list:
             if isinstance(obj, list):
-                
+
                 for idx, op in enumerate(obj):
-                    #kwargs for mapping during load later 
+                    # kwargs for mapping during load later
                     self.ops_args[op._id] = op.export_op()[op._id]
                     if idx > 0:
                         to_add = {op._id: [[obj[idx - 1]._id]]}
@@ -484,7 +483,7 @@ class Workflow:
                         for dep_grp in dep_set:
                             # handle required stats
                             if hasattr(target_op, "req_stats"):
-#                                 self.reg_stat_ops(target_op.req_stats)
+                                #                                 self.reg_stat_ops(target_op.req_stats)
                                 for opo in target_op.req_stats:
                                     # only add if it doesnt already exist=
                                     if not self.is_repeat_op(opo, cols):
@@ -497,11 +496,10 @@ class Workflow:
                                 if not hasattr(target_op, "req_stats")
                                 else target_op.req_stats
                             )
-                            if not self.is_repeat_op(target_op, cols):        
+                            if not self.is_repeat_op(target_op, cols):
                                 dep_tasks.append((target_op, cols, dep_grp, parents))
         return dep_tasks
 
-    
     def is_repeat_op(self, op, cols):
         """
         op: operator;
@@ -513,8 +511,7 @@ class Workflow:
             if op._id in task_d[0]._id and cols == task_d[1]:
                 return True
         return False
-    
-    
+
     def update_stats(self, itr, end_phase=None):
         end = end_phase if end_phase else len(self.phases)
         for phase in self.phases[:end]:
@@ -563,7 +560,7 @@ class Workflow:
                     op.apply_op(
                         gdf, self.columns_ctx, cols_grp, target_cols=target_cols
                     )
-            # if export is activated combine as many GDFs as possible and 
+            # if export is activated combine as many GDFs as possible and
             # then write them out cudf.concat([exp_gdf, gdf], axis=0)
         for stat_op in run_stat_ops:
             stat_op.read_fin()
@@ -633,7 +630,7 @@ class Workflow:
         for tasks in self.phases[start:end]:
             for task in tasks:
                 op, cols_grp, target_cols, parents = task
-                
+
                 if op._id in self.feat_ops:
                     gdf = self.feat_ops[op._id].apply_op(
                         gdf, self.columns_ctx, cols_grp, target_cols=target_cols

@@ -93,14 +93,10 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine, preprocess
     cont_names = ["x", "y", "id"]
     label_name = ["label"]
 
-
     processor = pp.Workflow(
-        cat_names=cat_names,
-        cont_names=cont_names,
-        label_name=label_name,
-        to_cpu=True,
+        cat_names=cat_names, cont_names=cont_names, label_name=label_name, to_cpu=True,
     )
-    
+
     processor.add_feature([ops.FillMissing(), ops.LogOp(preprocessing=preprocessing)])
     processor.add_preprocess(ops.Normalize())
     processor.add_preprocess(ops.Categorify())
@@ -115,7 +111,7 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine, preprocess
     )
 
     processor.update_stats(data_itr)
-    
+
     if dump:
         config_file = tmpdir + "/temp.yaml"
         processor.save_stats(config_file)
@@ -131,17 +127,25 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine, preprocess
     # Check mean and std - No good right now we have to add all other changes; Zerofill, Log
 
     assert math.isclose(
-        get_norms(df.x).mean(), processor.stats["means"]["x_FillMissing_LogOp"], rel_tol=1e-2
+        get_norms(df.x).mean(),
+        processor.stats["means"]["x_FillMissing_LogOp"],
+        rel_tol=1e-2,
     )
     assert math.isclose(
-        get_norms(df.y).mean(), processor.stats["means"]["y_FillMissing_LogOp"], rel_tol=1e-2
+        get_norms(df.y).mean(),
+        processor.stats["means"]["y_FillMissing_LogOp"],
+        rel_tol=1e-2,
     )
     #     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_FillMissing"], rel_tol=1e-4)
     assert math.isclose(
-        get_norms(df.x).std(), processor.stats["stds"]["x_FillMissing_LogOp"], rel_tol=1e-2
+        get_norms(df.x).std(),
+        processor.stats["stds"]["x_FillMissing_LogOp"],
+        rel_tol=1e-2,
     )
     assert math.isclose(
-        get_norms(df.y).std(), processor.stats["stds"]["y_FillMissing_LogOp"], rel_tol=1e-2
+        get_norms(df.y).std(),
+        processor.stats["stds"]["y_FillMissing_LogOp"],
+        rel_tol=1e-2,
     )
     #     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_FillMissing"], rel_tol=1e-3)
 
@@ -152,7 +156,6 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine, preprocess
     assert math.isclose(x_median, processor.stats["medians"]["x"], rel_tol=1e1)
     assert math.isclose(y_median, processor.stats["medians"]["y"], rel_tol=1e1)
     assert math.isclose(id_median, processor.stats["medians"]["id"], rel_tol=1e-2)
-
 
     # Check that categories match
     if engine == "parquet":
@@ -167,13 +170,16 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine, preprocess
     processor.write_to_dataset(
         tmpdir, data_itr, nfiles=10, shuffle=True, apply_ops=True
     )
-    
+
     processor.create_final_cols()
-    
-    #if preprocessing
+
+    # if preprocessing
     if not preprocessing:
         for col in cont_names:
-            assert f"{col}_FillMissing_LogOp" in processor.columns_ctx["final"]["cols"]["continuous"]
+            assert (
+                f"{col}_FillMissing_LogOp"
+                in processor.columns_ctx["final"]["cols"]["continuous"]
+            )
 
     dlc = bl.DLCollator(preproc=processor)
     data_files = [

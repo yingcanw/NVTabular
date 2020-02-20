@@ -19,7 +19,7 @@ import shutil
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
-@pytest.mark.parametrize("op_columns", [["x"],None])
+@pytest.mark.parametrize("op_columns", [["x"], None])
 def test_minmax(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
 
@@ -63,7 +63,7 @@ def test_minmax(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
     processor.update_stats(data_itr)
 
     x_min = min(df["x"])
-    
+
     name_min = min(df["name-string"])
     assert x_min == processor.stats["mins"]["x"]
     x_max = max(df["x"])
@@ -82,7 +82,7 @@ def test_minmax(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
-@pytest.mark.parametrize("op_columns", [["x"],None])
+@pytest.mark.parametrize("op_columns", [["x"], None])
 def test_moments(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
 
@@ -140,7 +140,7 @@ def test_moments(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
-@pytest.mark.parametrize("op_columns", [["name-string"],None])
+@pytest.mark.parametrize("op_columns", [["name-string"], None])
 def test_encoder(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
 
@@ -197,7 +197,7 @@ def test_encoder(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
-@pytest.mark.parametrize("op_columns", [["x"],None])
+@pytest.mark.parametrize("op_columns", [["x"], None])
 def test_median(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
 
@@ -254,7 +254,7 @@ def test_median(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
-@pytest.mark.parametrize("op_columns", [["x"],None])
+@pytest.mark.parametrize("op_columns", [["x"], None])
 def test_log(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
 

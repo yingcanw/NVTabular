@@ -85,10 +85,12 @@ class DLLabelEncoder(object):
                     # must reconstruct encoded series from multiple parts
                     # zero out unknowns using na_sentinel
                     none_prep = cudf.Series([None])
-                    chunk = none_prep.append(chunk[self.col]).reset_index(drop=True).unique()
-                    part_encoded = cudf.Series(
-                        y.label_encoding(chunk, na_sentinel=0)
+                    chunk = (
+                        none_prep.append(chunk[self.col])
+                        .reset_index(drop=True)
+                        .unique()
                     )
+                    part_encoded = cudf.Series(y.label_encoding(chunk, na_sentinel=0))
                     # added ref count to all values over zero in series
                     part_encoded = (
                         part_encoded + (part_encoded > 0).astype("int") * rec_count
