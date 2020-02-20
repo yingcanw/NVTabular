@@ -71,7 +71,8 @@ def test_gpu_file_iterator_dl(datasets, batch, dskey):
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
 @pytest.mark.parametrize("dump", [True, False])
-def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
+@pytest.mark.parametrize("preprocessing", [True, False])
+def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine, preprocessing):
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
 
     if engine == "parquet":
@@ -92,18 +93,18 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     cont_names = ["x", "y", "id"]
     label_name = ["label"]
 
-    config = pp.get_new_config()
-    config["FE"]["continuous"] = [ops.MinMax()]
-    config["PP"]["continuous"] = [[ops.FillMissing(), ops.Normalize()]]
-    config["PP"]["categorical"] = [ops.Categorify()]
 
     processor = pp.Workflow(
         cat_names=cat_names,
         cont_names=cont_names,
         label_name=label_name,
-        config=config,
         to_cpu=True,
     )
+    
+    processor.add_feature([ops.FillMissing(), ops.LogOp(preprocessing=preprocessing)])
+    processor.add_preprocess(ops.Normalize())
+    processor.add_preprocess(ops.Categorify())
+    processor.finalize()
 
     data_itr = ds.GPUDatasetIterator(
         paths,
@@ -114,6 +115,7 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     )
 
     processor.update_stats(data_itr)
+    
     if dump:
         config_file = tmpdir + "/temp.yaml"
         processor.save_stats(config_file)
@@ -123,22 +125,23 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     def get_norms(tar: cudf.Series):
         ser_median = tar.dropna().quantile(0.5, interpolation="linear")
         gdf = tar.fillna(ser_median)
+        gdf = np.log(gdf + 1)
         return gdf
 
     # Check mean and std - No good right now we have to add all other changes; Zerofill, Log
 
     assert math.isclose(
-        get_norms(df.x).mean(), processor.stats["means"]["x_FillMissing"], rel_tol=1e-4
+        get_norms(df.x).mean(), processor.stats["means"]["x_FillMissing_LogOp"], rel_tol=1e-2
     )
     assert math.isclose(
-        get_norms(df.y).mean(), processor.stats["means"]["y_FillMissing"], rel_tol=1e-4
+        get_norms(df.y).mean(), processor.stats["means"]["y_FillMissing_LogOp"], rel_tol=1e-2
     )
     #     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_FillMissing"], rel_tol=1e-4)
     assert math.isclose(
-        get_norms(df.x).std(), processor.stats["stds"]["x_FillMissing"], rel_tol=1e-3
+        get_norms(df.x).std(), processor.stats["stds"]["x_FillMissing_LogOp"], rel_tol=1e-2
     )
     assert math.isclose(
-        get_norms(df.y).std(), processor.stats["stds"]["y_FillMissing"], rel_tol=1e-3
+        get_norms(df.y).std(), processor.stats["stds"]["y_FillMissing_LogOp"], rel_tol=1e-2
     )
     #     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_FillMissing"], rel_tol=1e-3)
 
@@ -149,14 +152,7 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     assert math.isclose(x_median, processor.stats["medians"]["x"], rel_tol=1e1)
     assert math.isclose(y_median, processor.stats["medians"]["y"], rel_tol=1e1)
     assert math.isclose(id_median, processor.stats["medians"]["id"], rel_tol=1e-2)
-    x_min = min(df["x"])
-    y_min = min(df["y"])
-    assert x_min == processor.stats["mins"]["x"]
-    assert y_min == processor.stats["mins"]["y"]
-    x_max = max(df["x"])
-    y_max = max(df["y"])
-    assert x_max == processor.stats["maxs"]["x"]
-    assert y_max == processor.stats["maxs"]["y"]
+
 
     # Check that categories match
     if engine == "parquet":
@@ -171,7 +167,13 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     processor.write_to_dataset(
         tmpdir, data_itr, nfiles=10, shuffle=True, apply_ops=True
     )
+    
     processor.create_final_cols()
+    
+    #if preprocessing
+    if not preprocessing:
+        for col in cont_names:
+            assert f"{col}_FillMissing_LogOp" in processor.columns_ctx["final"]["cols"]["continuous"]
 
     dlc = bl.DLCollator(preproc=processor)
     data_files = [

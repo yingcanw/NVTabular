@@ -63,17 +63,19 @@ def test_minmax(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
     processor.update_stats(data_itr)
 
     x_min = min(df["x"])
-    y_min = min(df["y"])
+    
     name_min = min(df["name-string"])
     assert x_min == processor.stats["mins"]["x"]
-    assert y_min == processor.stats["mins"]["y"]
-    assert name_min == processor.stats["mins"]["name-string"]
     x_max = max(df["x"])
-    y_max = max(df["y"])
-    name_max = max(df["name-string"])
     assert x_max == processor.stats["maxs"]["x"]
-    assert y_max == processor.stats["maxs"]["y"]
-    assert name_max == processor.stats["maxs"]["name-string"]
+    if not op_columns:
+        assert name_min == processor.stats["mins"]["name-string"]
+        y_max = max(df["y"])
+        name_max = max(df["name-string"])
+        assert y_max == processor.stats["maxs"]["y"]
+        assert name_max == processor.stats["maxs"]["name-string"]
+        y_min = min(df["y"])
+        assert y_min == processor.stats["mins"]["y"]
     if os.path.exists(processor.ds_exports):
         shutil.rmtree(processor.ds_exports)
 
@@ -125,11 +127,13 @@ def test_moments(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
 
     # Check mean and std
     assert math.isclose(df.x.mean(), processor.stats["means"]["x"], rel_tol=1e-4)
-    assert math.isclose(df.y.mean(), processor.stats["means"]["y"], rel_tol=1e-4)
-    assert math.isclose(df.id.mean(), processor.stats["means"]["id"], rel_tol=1e-4)
     assert math.isclose(df.x.std(), processor.stats["stds"]["x"], rel_tol=1e-3)
-    assert math.isclose(df.y.std(), processor.stats["stds"]["y"], rel_tol=1e-3)
-    assert math.isclose(df.id.std(), processor.stats["stds"]["id"], rel_tol=1e-3)
+    if not op_columns:
+        assert math.isclose(df.y.mean(), processor.stats["means"]["y"], rel_tol=1e-4)
+        assert math.isclose(df.id.mean(), processor.stats["means"]["id"], rel_tol=1e-4)
+
+        assert math.isclose(df.y.std(), processor.stats["stds"]["y"], rel_tol=1e-3)
+        assert math.isclose(df.id.std(), processor.stats["stds"]["id"], rel_tol=1e-3)
     if os.path.exists(processor.ds_exports):
         shutil.rmtree(processor.ds_exports)
 
@@ -180,7 +184,7 @@ def test_encoder(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
     processor.update_stats(data_itr)
 
     # Check that categories match
-    if engine == "parquet":
+    if engine == "parquet" and not op_columns:
         cats_expected0 = df["name-cat"].unique().values_to_string()
         cats0 = processor.stats["encoders"]["name-cat"]._cats.values_to_string()
         assert cats0 == ["None"] + cats_expected0
@@ -238,11 +242,12 @@ def test_median(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
 
     # Check median (TODO: Improve the accuracy)
     x_median = df.x.dropna().quantile(0.5, interpolation="linear")
-    y_median = df.y.dropna().quantile(0.5, interpolation="linear")
-    id_median = df.id.dropna().quantile(0.5, interpolation="linear")
     assert math.isclose(x_median, processor.stats["medians"]["x"], rel_tol=1e1)
-    assert math.isclose(y_median, processor.stats["medians"]["y"], rel_tol=1e1)
-    assert math.isclose(id_median, processor.stats["medians"]["id"], rel_tol=1e-2)
+    if not op_columns:
+        y_median = df.y.dropna().quantile(0.5, interpolation="linear")
+        id_median = df.id.dropna().quantile(0.5, interpolation="linear")
+        assert math.isclose(y_median, processor.stats["medians"]["y"], rel_tol=1e1)
+        assert math.isclose(id_median, processor.stats["medians"]["id"], rel_tol=1e-2)
     if os.path.exists(processor.ds_exports):
         shutil.rmtree(processor.ds_exports)
 
@@ -287,5 +292,4 @@ def test_log(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
 
     for gdf in data_itr:
         new_gdf = log_op.apply_op(gdf, columns_ctx, "continuous")
-        import pdb; pdb.set_trace()
         assert new_gdf[cont_names] == np.log(gdf[cont_names].astype(np.float32))

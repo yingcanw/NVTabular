@@ -34,15 +34,14 @@ class Operator:
         tar_cols = []
         for tar in target_cols:
             if tar in cols_ctx[cols_grp].keys():
-                to_add = None
-                if tar in 'base':
-                    to_add = True
-                else:
-                    op = all_ops[tar]
-                    to_add = op.preprocessing
-                if to_add:
                     tar_cols = tar_cols + cols_ctx[cols_grp][tar]
         return tar_cols
+    
+    def export_op(self):
+        export = {}
+        export[self._id] = self.__dict__
+        return export
+
 
 class TransformOperator(Operator):
     preprocessing = False
@@ -80,7 +79,7 @@ class TransformOperator(Operator):
             input_cols = self.default_out
         columns_ctx[input_cols][new_key] = []
         columns_ctx[input_cols][new_key] = list(new_cols)
-        if not self.preprocessing and not self._id in columns_ctx["final"]["ctx"][input_cols]:
+        if not self.preprocessing:
             columns_ctx["final"]["ctx"][input_cols].append(self._id)
 
     
@@ -94,7 +93,9 @@ class TransformOperator(Operator):
         raise NotImplementedError(
             """The operation to be applied on the data frame chunk, given the required statistics.
                 """
-        )    
+        )
+    
+
 
 
 class DFOperator(TransformOperator):
@@ -376,6 +377,7 @@ class Export(TransformOperator):
 class ZeroFill(TransformOperator):
     default_in = CONT
     default_out = CONT
+
     def apply_op(
         self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols='base'
     ):
@@ -443,12 +445,12 @@ class FillMissing(DFOperator):
     default_in = CONT
     default_out = CONT
 
-    def __init__(self, fill_strategy=MEDIAN, fill_val=0, add_col=False, columns=None, preprocessing=True, replace=False, default_in=None, default_out=None):
+    def __init__(self, fill_strategy=MEDIAN, fill_val=0, filler={}, add_col=False, columns=None, preprocessing=True, replace=False, default_in=None, default_out=None):
         super().__init__(columns=columns, preprocessing=preprocessing, replace=replace)
         self.fill_strategy = fill_strategy
         self.fill_val = fill_val
         self.add_col = add_col
-        self.filler = {}
+        self.filler = filler
 
     @property
     def req_stats(self):
@@ -533,14 +535,14 @@ class Categorify(DFOperator):
     
 
 all_ops = {
-    MinMax()._id: MinMax(),
-    Moments()._id: Moments(), 
-    Median()._id: Median(), 
-    Encoder()._id: Encoder(), 
-    Export()._id: Export(), 
-    ZeroFill()._id: ZeroFill(),
-    LogOp()._id: LogOp(),
-    Normalize()._id: Normalize(),
-    FillMissing()._id: FillMissing(),
-    Categorify()._id: Categorify()
+    MinMax()._id: MinMax,
+    Moments()._id: Moments, 
+    Median()._id: Median, 
+    Encoder()._id: Encoder, 
+    Export()._id: Export, 
+    ZeroFill()._id: ZeroFill,
+    LogOp()._id: LogOp,
+    Normalize()._id: Normalize,
+    FillMissing()._id: FillMissing,
+    Categorify()._id: Categorify
 }

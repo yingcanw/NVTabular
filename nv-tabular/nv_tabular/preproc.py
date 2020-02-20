@@ -65,7 +65,7 @@ class Workflow:
         df_ops=None,
         to_cpu=True,
         config=None,
-        export=False,
+        export=True,
         export_path="./ds_export",
     ):
         self.reg_funcs = {
@@ -92,6 +92,7 @@ class Workflow:
         self.ds_exports = export_path
         self.to_cpu = to_cpu
         self.export = export
+        self.ops_args = {}
         if config:
             self.load_config(config)
         else:
@@ -102,6 +103,7 @@ class Workflow:
         self.clear_stats()
 
     def get_tar_cols(self, operators):
+        # all operators in a list are chained therefore based on parent in list
         if type(operators) is list:
             target_cols = operators[0].get_default_in()
         else:
@@ -269,7 +271,6 @@ class Workflow:
         for task_set in config.keys():
             self.task_sets[task_set] = self.build_tasks(config[task_set])
             self.master_task_list = self.master_task_list + self.task_sets[task_set]
-        self.remove_dupes()
 
         self.reg_all_ops(self.master_task_list)
         baseline, leftovers = self.sort_task_types(self.master_task_list)
@@ -280,17 +281,7 @@ class Workflow:
             self.phases_export()
         self.create_final_col_refs()
 
-    def remove_dupes(self):
-        """
-        After the master task list is created this function removes any duplicate version 
-        of statistical operators that may be required by more than one operator.
-        """
-        for idx, ptask in enumerate(self.master_task_list):
-            for sdx, stask in enumerate(self.master_task_list):
-                # if you find it again later in the list remove it
-                if ptask[0] == stask[0] and ptask[1] in stask[1] and not sdx == idx:
-                    self.master_task_list.remove(stask)
-
+        
     def phase_creator(self, task_list):
         """
         task_list: list, phase specific list of operators and dependencies
@@ -396,13 +387,17 @@ class Workflow:
         task_dicts = []
         for obj in task_list:
             if isinstance(obj, list):
+                
                 for idx, op in enumerate(obj):
+                    #kwargs for mapping during load later 
+                    self.ops_args[op._id] = op.export_op()[op._id]
                     if idx > 0:
                         to_add = {op._id: [[obj[idx - 1]._id]]}
                     else:
                         to_add = {op._id: [[]]}
                     task_dicts.append(to_add)
             else:
+                self.ops_args[obj._id] = obj.export_op()[obj._id]
                 to_add = {obj._id: [[]]}
                 task_dicts.append(to_add)
         return task_dicts
@@ -476,7 +471,8 @@ class Workflow:
             for task in task_list:
                 for op_id, dep_set in task.items():
                     # get op from op_id
-                    target_op = all_ops[op_id]
+                    # operators need to be instantiated with state information
+                    target_op = all_ops[op_id](**self.ops_args[op_id])
                     if not target_op:
                         warnings.warn(
                             f"""Did not find corresponding op for id: {op_id}. 
@@ -486,26 +482,39 @@ class Workflow:
                         break
                     if dep_set:
                         for dep_grp in dep_set:
+                            # handle required stats
                             if hasattr(target_op, "req_stats"):
-                                self.reg_stat_ops(target_op.req_stats)
+#                                 self.reg_stat_ops(target_op.req_stats)
                                 for opo in target_op.req_stats:
-                                    # only add if it doesnt already exist
-                                    found = False
-                                    for task_d in dep_tasks:
-                                        if opo is task_d[0] and cols in task_d[1]:
-                                            found = True
-                                    if not found:
+                                    # only add if it doesnt already exist=
+                                    if not self.is_repeat_op(opo, cols):
                                         dep_grp = dep_grp if dep_grp else ["base"]
                                         dep_tasks.append((opo, cols, dep_grp, []))
+                            # after req stats handle target_op
                             dep_grp = dep_grp if dep_grp else ["base"]
                             parents = (
                                 []
                                 if not hasattr(target_op, "req_stats")
                                 else target_op.req_stats
                             )
-                            dep_tasks.append((target_op, cols, dep_grp, parents))
+                            if not self.is_repeat_op(target_op, cols):        
+                                dep_tasks.append((target_op, cols, dep_grp, parents))
         return dep_tasks
 
+    
+    def is_repeat_op(self, op, cols):
+        """
+        op: operator;
+        cols: string; one of the following; continuous, categorical, all
+        helper function to find if a given operator targeting a column set
+        already exists in the master task list.
+        """
+        for task_d in self.master_task_list:
+            if op._id in task_d[0]._id and cols == task_d[1]:
+                return True
+        return False
+    
+    
     def update_stats(self, itr, end_phase=None):
         end = end_phase if end_phase else len(self.phases)
         for phase in self.phases[:end]:
@@ -624,6 +633,7 @@ class Workflow:
         for tasks in self.phases[start:end]:
             for task in tasks:
                 op, cols_grp, target_cols, parents = task
+                
                 if op._id in self.feat_ops:
                     gdf = self.feat_ops[op._id].apply_op(
                         gdf, self.columns_ctx, cols_grp, target_cols=target_cols
@@ -668,10 +678,6 @@ class Workflow:
         cats, conts, label = {}, {}, {}
         for gdf in itr:
             if apply_ops:
-                for name, feat_op in self.feat_ops.items():
-                    gdf = feat_op.apply_op(
-                        gdf, self.cont_names, self.cat_names, self.label_name
-                    )
                 gdf = self.apply_ops(gdf)
 
             cat_names = self.columns_ctx["final"]["cols"]["categorical"]

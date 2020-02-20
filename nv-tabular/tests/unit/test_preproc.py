@@ -240,7 +240,6 @@ def test_pq_to_pq_processed(tmpdir, datasets):
     paths = [os.path.join(indir, x) for x in os.listdir(indir) if x.endswith("parquet")
             ]
 
-
     data_itr = ds.GPUDatasetIterator(
         paths,
         use_row_groups=True,
@@ -341,14 +340,6 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
     config["FE"]["continuous"] = [[ops.FillMissing(), ops.LogOp()]]
     config["PP"]["continuous"] = [[ops.LogOp(), ops.Normalize()]]
     config["PP"]["categorical"] = [ops.Categorify()]
-#     config["FE"]["continuous"] = [{ops.Bucketize()._id: [[]]},
-#                                     {ops.FillMissing()._id: [[]]},
-#                                   {ops.LogOp()._id: [[ops.FillMissing()._id]]}]
-
-#     # preprocessing happens to all available columns 
-#     config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
-#     config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.LogOp()._id]]}]
-    
 
     processor = pp.Workflow(
         cat_names=cat_names,
@@ -431,7 +422,8 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
 @pytest.mark.parametrize("dump", [True, False])
-def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine):
+@pytest.mark.parametrize("op_columns", [["x"],None])
+def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine, op_columns):
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
 
     if engine == "parquet":
@@ -459,8 +451,7 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine):
         to_cpu=False,
     )
     
-    processor.add_feature([ops.FillMissing(), ops.LogOp()])
-#     processor.add_feature()
+    processor.add_feature([ops.FillMissing(columns=op_columns), ops.LogOp()])
     processor.add_preprocess(ops.Normalize())
     processor.add_preprocess(ops.Categorify())
     processor.finalize()
@@ -475,7 +466,6 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine):
 
     processor.update_stats(data_itr)
     
-    
     if dump:
         config_file = tmpdir + "/temp.yaml"
         processor.save_stats(config_file)
@@ -488,13 +478,14 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine):
         gdf = np.log(gdf + 1)
         return gdf
     # Check mean and std - No good right now we have to add all other changes; Zerofill, Log
-
     
+    if not op_columns:
+        assert math.isclose(get_norms(df.y).mean(), processor.stats["means"]["y_FillMissing_LogOp"], rel_tol=1e-2)
+        assert math.isclose(get_norms(df.y).std(), processor.stats["stds"]["y_FillMissing_LogOp"], rel_tol=1e-2)
     assert math.isclose(get_norms(df.x).mean(), processor.stats["means"]["x_FillMissing_LogOp"], rel_tol=1e-2)
-    assert math.isclose(get_norms(df.y).mean(), processor.stats["means"]["y_FillMissing_LogOp"], rel_tol=1e-2)
-#     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_FillMissing_LogOp"], rel_tol=1e-4)
     assert math.isclose(get_norms(df.x).std(), processor.stats["stds"]["x_FillMissing_LogOp"], rel_tol=1e-2)
-    assert math.isclose(get_norms(df.y).std(), processor.stats["stds"]["y_FillMissing_LogOp"], rel_tol=1e-2)
+
+#     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_FillMissing_LogOp"], rel_tol=1e-4)
 #     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_FillMissing_LogOp"], rel_tol=1e-3)
 
 
