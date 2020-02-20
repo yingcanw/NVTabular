@@ -1,11 +1,21 @@
 import numpy as np
 import cudf
+import pandas as pd
 import rmm
 import numba
 import ds_itr.ds_iterator as ds_itr
 import ds_itr.ds_writer as ds_wtr
 import os
-
+import psutil
+from cudf.utils import cudautils
+from cudf.utils.dtypes import (
+    is_categorical_dtype,
+    is_datetime_dtype,
+    is_list_like,
+    is_scalar,
+    min_scalar_type,
+    to_cudf_compatible_scalar,
+)
 
 def _enforce_str(y: cudf.Series) -> cudf.Series:
     """
@@ -25,7 +35,11 @@ def _enforce_npint32(y: cudf.Series) -> cudf.Series:
 class DLLabelEncoder(object):
     def __init__(self, col, cats=None, path=None, limit_frac=0.1, file_paths=None):
         # required because cudf.series does not compute bool type
+        self._cats_counts = cudf.Series([]) 
+        self._cats_counts_host = None
         self._cats = cats if type(cats) == cudf.Series else cudf.Series([cats])
+        self.host_mem_used = False
+        self.disk_used = False
         # writer needs to be mapped to same file in folder.
         self.path = path or os.path.join(os.getcwd(), 'label_encoders')
         self.folder_path = os.path.join(self.path, col)
@@ -37,8 +51,24 @@ class DLLabelEncoder(object):
                 ]
         self.col = col
         self.limit_frac = limit_frac
+        self.sub_cats_size = 50000
 
-    def transform(self, y: cudf.Series, unk_idx=0) -> cudf.Series:
+    def label_encoding(self, vals, cats, dtype=None, na_sentinel=-1):
+        if dtype is None:
+            dtype = min_scalar_type(len(cats), 32)
+
+        order = cudf.Series(cudautils.arange(len(vals)))
+        codes = cats.index
+
+        value = cudf.DataFrame({"value": cats, "code": codes})
+        codes = cudf.DataFrame({"value": vals.copy(), "order": order})
+        codes = codes.merge(value, on="value", how="left")
+        codes = codes.sort_values("order")["code"].fillna(na_sentinel)
+        cats.name = None  # because it was mutated above
+
+        return codes._copy_construct(name=None, index=vals.index)
+
+    def transform_old(self, y: cudf.Series, unk_idx=0) -> cudf.Series:
         """
         Transform an input into its categorical keys.
         This is intended for use with small inputs relative to the size of the
@@ -91,17 +121,39 @@ class DLLabelEncoder(object):
             encoded = cudf.Series(y.label_encoding(self._cats, na_sentinel=0))
         return encoded[:].replace(-1, 0)
 
+    def transform(self, y: cudf.Series, unk_idx=0) -> cudf.Series:
+        # Need to watch out for None calls now
+        if self.host_mem_used is False and self.disk_used is False:
+            encoded = cudf.Series(y.label_encoding(self._cats, na_sentinel=0))
+        elif self.disk_used is False:
+            i = 0
+            encoded = None
+            while i < len(self._cats_host):
+                sub_cats = cudf.Series(self._cats_host[i:i+self.sub_cats_size])
+                if encoded is None:
+                    encoded = self.label_encoding(y, sub_cats, na_sentinel=0)
+                else:
+                    encoded = encoded.add(self.label_encoding(y, sub_cats, na_sentinel=0), fill_value=0)
+                i = i + self.sub_cats_size
+
+            sub_cats = cudf.Series([])
+        else:
+            print("Unload to files")
+
+        return encoded[:].replace(-1, 0)
+
     def series_size(self, s):
         if hasattr(s, "str"):
             return s.str.device_memory()
         else:
             return s.dtype.itemsize * len(s)
 
-    def fit(self, y: cudf.Series):
+    def fit_old(self, y: cudf.Series):
         y = _enforce_str(y).reset_index(drop=True)
         if self._cats.empty:
             self._cats = self.one_cycle(y)
             return
+
         self._cats = self._cats.append(self.one_cycle(y)).unique()
         # check if enough space to leave in gpu memory if category doubles in size
         if self.series_size(self._cats) > (
@@ -110,8 +162,58 @@ class DLLabelEncoder(object):
             # first time dumping into file
             if not os.path.exists(self.folder_path):
                 os.makedirs(self.folder_path)
+
             self.dump_cats()
 
+    def fit(self, y: cudf.Series):
+        #y = _enforce_str(y).reset_index(drop=True)
+        y_counts = y.value_counts()
+        if len(self._cats_counts) == 0:
+            self._cats_counts = y_counts
+        else:
+            self._cats_counts = self._cats_counts.add(y_counts, fill_value=0)
+
+        free_gpu_mem_size = numba.cuda.current_context().get_memory_info()[0]
+        series_size = self.series_size(self._cats_counts)
+
+        if series_size > (free_gpu_mem_size * self.limit_frac):
+            print("*** Host mem will be used")
+            if self._cats_counts_host is None:
+                self._cats_counts_host = self._cats_counts.to_pandas()
+            else:
+                self._cats_counts_host = self._cats_counts_host.add(self._cats_counts.to_pandas(), fill_value=0)
+
+            self.host_mem_used = True
+            self._cats_counts = cudf.Series([]) 
+
+            cpu_mem_size = psutil.virtual_memory()[1]
+            series_host_size = self.series_size(self._cats_counts_host)
+            if series_host_size > (cpu_mem_size * self.limit_frac):
+                #self.disk_used = True
+                print("Unload to files")
+        
+    # Note: Add 0: None row to _cats.
+    def fit_finalize(self, filter_freq=1):
+        total_cats = 0
+        if self.host_mem_used is False and self.disk_used is False:
+            self._cats = cudf.Series(self._cats_counts[self._cats_counts >= filter_freq].index)
+            self._cats = cudf.Series([None]).append(self._cats).reset_index(drop=True)
+            total_cats = self._cats.shape[0]
+        elif self.disk_used is False:
+            self._cats_counts_host = self._cats_counts_host.add(self._cats_counts.to_pandas(), fill_value=0)
+            self._cats_host = pd.Series(self._cats_counts_host[self._cats_counts_host >= filter_freq].index)
+            self._cats_host = pd.Series([None]).append(self._cats_host).reset_index(drop=True)
+            self._cats = cudf.Series()
+            total_cats = self._cats_host.shape[0]
+        else:
+            print("Unload to files")
+
+        #self._cats = cudf.Series()
+        self._cats_counts = cudf.Series()
+        self._cats_counts_host = None
+
+        return total_cats
+                
     def merge_series(self, compr_a, compr_b):
         df, dg = cudf.DataFrame(), cudf.DataFrame()
         df["l1"] = compr_a.nans_to_nulls().dropna()
@@ -138,7 +240,7 @@ class DLLabelEncoder(object):
             file_paths = [
                 os.path.join(self.folder_path, x) for x in os.listdir(self.folder_path) if x.endswith("parquet") and x not in self.file_paths + self.ignore_files
             ]
-            if file_paths:
+            if file_paths:             
                 chunks = ds_itr.GPUDatasetIterator(file_paths)
                 for chunk in chunks:
                     compr = self.merge_series(chunk[self.col], compr)

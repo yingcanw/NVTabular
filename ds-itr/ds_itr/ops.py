@@ -249,6 +249,9 @@ class Encoder(StatOperator):
     encoders = {}
     categories = {}
 
+    def __init__(self, filter_freq=1):
+        self.filter_freq = filter_freq
+
     def read_itr(
         self, gdf: cudf.DataFrame, cont_names: [], cat_names: [], label_name: []
     ):
@@ -258,7 +261,7 @@ class Encoder(StatOperator):
             return
         for name in cat_names:
             if not name in self.encoders:
-                self.encoders[name] = DLLabelEncoder(name)
+                self.encoders[name] = DLLabelEncoder(name, limit_frac=0.1)
                 gdf[name].append([None])
             self.encoders[name].fit(gdf[name])
         return
@@ -267,7 +270,7 @@ class Encoder(StatOperator):
         """ Finalize categorical encoders (get categories).
         """
         for name, val in self.encoders.items():
-            self.categories[name] = self.cat_read_all_files(val)
+            self.categories[name] = val.fit_finalize(self.filter_freq)
         return
 
     def cat_read_all_files(self, cat_obj):
@@ -419,9 +422,12 @@ class Categorify(DFOperator):
     embed_sz = {}
     cat_names = []
 
+    def __init__(self, filter_freq=1):
+        self.filter_freq = filter_freq
+
     @property
     def req_stats(self):
-        return [Encoder()]
+        return [Encoder(filter_freq=self.filter_freq)]
 
     def apply_op(
         self,
