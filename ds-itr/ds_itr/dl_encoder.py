@@ -33,7 +33,9 @@ def _enforce_npint32(y: cudf.Series) -> cudf.Series:
 
 
 class DLLabelEncoder(object):
-    def __init__(self, col, cats=None, path=None, limit_frac=0.1, file_paths=None):
+    def __init__(self, col, cats=None, path=None, limit_frac=0.1, 
+                 gpu_mem_util_limit = 0.8, cpu_mem_util_limit = 0.8, 
+                 gpu_mem_trans_use = 0.8, file_paths=None):
         # required because cudf.series does not compute bool type
         self._cats_counts = cudf.Series([]) 
         self._cats_counts_host = None
@@ -51,6 +53,9 @@ class DLLabelEncoder(object):
                 ]
         self.col = col
         self.limit_frac = limit_frac
+        self.gpu_mem_util_limit = gpu_mem_util_limit
+        self.cpu_mem_util_limit = cpu_mem_util_limit
+        self.gpu_mem_trans_use = gpu_mem_trans_use
         self.sub_cats_size = 50000
 
     def label_encoding(self, vals, cats, dtype=None, na_sentinel=-1):
@@ -115,7 +120,6 @@ class DLLabelEncoder(object):
                         part_encoded if encoded.empty else encoded.add(part_encoded)
                     )
                     rec_count = rec_count + len(chunk)
-                    
         else:
             # all cats in memory
             encoded = cudf.Series(y.label_encoding(self._cats, na_sentinel=0))
@@ -126,6 +130,8 @@ class DLLabelEncoder(object):
         if self.host_mem_used is False and self.disk_used is False:
             encoded = cudf.Series(y.label_encoding(self._cats, na_sentinel=0))
         elif self.disk_used is False:
+            avail_gpu_mem = numba.cuda.current_context().get_memory_info()[0]
+            self.sub_cats_size = int(avail_gpu_mem * self.gpu_mem_trans_use / self._cats_host.dtype.itemsize)
             i = 0
             encoded = None
             while i < len(self._cats_host):
@@ -173,11 +179,11 @@ class DLLabelEncoder(object):
         else:
             self._cats_counts = self._cats_counts.add(y_counts, fill_value=0)
 
-        free_gpu_mem_size = numba.cuda.current_context().get_memory_info()[0]
-        series_size = self.series_size(self._cats_counts)
+        gpu_mem = numba.cuda.current_context().get_memory_info()
+        gpu_mem_util = (gpu_mem[1] - gpu_mem[0]) / gpu_mem[1]
+        series_size_gpu = self.series_size(self._cats_counts)
 
-        if series_size > (free_gpu_mem_size * self.limit_frac):
-            print("*** Host mem will be used")
+        if series_size_gpu > (gpu_mem[0] * self.limit_frac) or gpu_mem_util > self.gpu_mem_util_limit:
             if self._cats_counts_host is None:
                 self._cats_counts_host = self._cats_counts.to_pandas()
             else:
@@ -186,9 +192,11 @@ class DLLabelEncoder(object):
             self.host_mem_used = True
             self._cats_counts = cudf.Series([]) 
 
-            cpu_mem_size = psutil.virtual_memory()[1]
+            cpu_mem = psutil.virtual_memory()
+            cpu_mem_util = cpu_mem[2]
             series_host_size = self.series_size(self._cats_counts_host)
-            if series_host_size > (cpu_mem_size * self.limit_frac):
+
+            if series_host_size > (cpu_mem[1] * self.limit_frac) or cpu_mem_util > self.cpu_mem_util_limit:
                 #self.disk_used = True
                 print("Unload to files")
         

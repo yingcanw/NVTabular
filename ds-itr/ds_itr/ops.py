@@ -261,7 +261,7 @@ class Encoder(StatOperator):
             return
         for name in cat_names:
             if not name in self.encoders:
-                self.encoders[name] = DLLabelEncoder(name, limit_frac=0.1)
+                self.encoders[name] = DLLabelEncoder(name, limit_frac=0.5)
                 gdf[name].append([None])
             self.encoders[name].fit(gdf[name])
         return
