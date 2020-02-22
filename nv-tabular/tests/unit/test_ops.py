@@ -14,9 +14,9 @@ import time
 import math
 import random
 import os
-import shutil
 
 
+@cleanup
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
 @pytest.mark.parametrize("op_columns", [["x"], None])
@@ -76,10 +76,10 @@ def test_minmax(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
         assert name_max == processor.stats["maxs"]["name-string"]
         y_min = min(df["y"])
         assert y_min == processor.stats["mins"]["y"]
-    if os.path.exists(processor.ds_exports):
-        shutil.rmtree(processor.ds_exports)
+    return processor.ds_exports
 
 
+@cleanup
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
 @pytest.mark.parametrize("op_columns", [["x"], None])
@@ -134,10 +134,10 @@ def test_moments(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
 
         assert math.isclose(df.y.std(), processor.stats["stds"]["y"], rel_tol=1e-3)
         assert math.isclose(df.id.std(), processor.stats["stds"]["id"], rel_tol=1e-3)
-    if os.path.exists(processor.ds_exports):
-        shutil.rmtree(processor.ds_exports)
+    return processor.ds_exports
 
 
+@cleanup
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
 @pytest.mark.parametrize("op_columns", [["name-string"], None])
@@ -191,10 +191,10 @@ def test_encoder(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
     cats_expected1 = df["name-string"].unique().values_to_string()
     cats1 = processor.stats["encoders"]["name-string"]._cats.values_to_string()
     assert cats1 == ["None"] + cats_expected1
-    if os.path.exists(processor.ds_exports):
-        shutil.rmtree(processor.ds_exports)
+    return processor.ds_exports
 
 
+@cleanup
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
 @pytest.mark.parametrize("op_columns", [["x"], None])
@@ -248,8 +248,7 @@ def test_median(tmpdir, datasets, gpu_memory_frac, engine, op_columns):
         id_median = df.id.dropna().quantile(0.5, interpolation="linear")
         assert math.isclose(y_median, processor.stats["medians"]["y"], rel_tol=1e1)
         assert math.isclose(id_median, processor.stats["medians"]["id"], rel_tol=1e-2)
-    if os.path.exists(processor.ds_exports):
-        shutil.rmtree(processor.ds_exports)
+    return processor.ds_exports
 
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])

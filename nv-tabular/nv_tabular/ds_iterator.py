@@ -246,7 +246,7 @@ class GPUFileIterator:
         batch_size=None,
         columns=None,
         use_row_groups=None,
-        dtype=None,
+        dtypes=None,
         names=None,
         row_size=None,
         **kwargs
@@ -258,11 +258,12 @@ class GPUFileIterator:
             batch_size=batch_size,
             gpu_memory_frac=gpu_memory_frac,
             use_row_groups=use_row_groups,
-            dtype=dtype,
+            dtypes=dtypes,
             names=names,
             row_size=None,
             **kwargs
         )
+        self.dtypes = dtypes
         self.columns = columns
         self.file_size = self.engine.num_rows
         self.rows_processed = 0
@@ -298,9 +299,17 @@ class GPUFileIterator:
             self.cur_chunk = self.engine.read_file_batch(
                 nskip=self.rows_processed, columns=self.columns
             )
+            if self.dtypes:
+                self.set_dtypes()
             self.count = self.count + 1
             self.rows_processed += self.cur_chunk.shape[0]
-
+    
+    def set_dtypes(self):
+        for col, dtype in self.dtypes.items():
+            if 'hex' in dtype: 
+                self.cur_chunk[col] = self.cur_chunk[col]._column.nvstrings.htoi()
+            else:
+                self.cur_chunkp[col] = self.cur_chunk[col].astype(dtype)
 
 #
 # GPUDatasetIterator (Iterates through multiple files)

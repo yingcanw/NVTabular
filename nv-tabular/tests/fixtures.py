@@ -9,6 +9,9 @@ import math
 import random
 import os
 import numpy as np
+from functools import wraps
+import shutil
+
 
 allcols_csv = ["timestamp", "id", "label", "name-string", "x", "y", "z"]
 mycols_csv = ["name-string", "id", "label", "x", "y"]
@@ -115,3 +118,22 @@ def datasets(tmpdir_factory):
     )
 
     return datadir
+
+
+
+def cleanup(func):
+    @wraps(func)
+    def func_up(*args, **kwargs):
+        target = func(*args, **kwargs)
+        remove_sub_files_folders(target)
+        remove_sub_files_folders(kwargs['tmpdir'])
+    return func_up
+
+
+def remove_sub_files_folders(path):
+    if os.path.exists(path):
+        for root, dirs, files in os.walk(path):
+            for file in files:
+                os.remove(os.path.join(root, file))
+
+

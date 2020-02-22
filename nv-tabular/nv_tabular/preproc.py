@@ -513,6 +513,9 @@ class Workflow:
         return False
 
     def update_stats(self, itr, end_phase=None):
+        # if no tasks have been loaded then we need to load internal config
+        if not self.phases:
+            self.finalize()
         end = end_phase if end_phase else len(self.phases)
         for phase in self.phases[:end]:
             # set parameters for export necessary,
@@ -560,6 +563,7 @@ class Workflow:
                     op.apply_op(
                         gdf, self.columns_ctx, cols_grp, target_cols=target_cols
                     )
+#                 pdb.set_trace()
             # if export is activated combine as many GDFs as possible and
             # then write them out cudf.concat([exp_gdf, gdf], axis=0)
         for stat_op in run_stat_ops:
