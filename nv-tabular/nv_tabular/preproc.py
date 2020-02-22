@@ -65,7 +65,7 @@ class Workflow:
         df_ops=None,
         to_cpu=True,
         config=None,
-        export=True,
+        export=False,
         export_path="./ds_export",
     ):
         self.reg_funcs = {
@@ -517,11 +517,11 @@ class Workflow:
         if not self.phases:
             self.finalize()
         end = end_phase if end_phase else len(self.phases)
-        for phase in self.phases[:end]:
+        for idx, _ in enumerate(self.phases[:end]):
             # set parameters for export necessary,
             # running only stats ops
             # not running stat_ops < --- may not be necessary may mean running apply_ops
-            new_path = self.exec_phase(itr, phase)
+            new_path = self.exec_phase(itr, idx)
             if new_path:
                 new_files = [
                     os.path.join(new_path, x)
@@ -530,39 +530,40 @@ class Workflow:
                 ]
                 itr = GPUDatasetIterator(new_files, engine="parquet")
 
+    def run_ops_for_phase(self, gdf, tasks, record_stats=True):
+        run_stat_ops = []
+        for task in tasks:
+            op, cols_grp, target_cols, parents = task
+            if record_stats and op._id in self.stat_ops:
+                op = self.stat_ops[op._id]
+                op.apply_op(
+                    gdf, self.columns_ctx, cols_grp, target_cols=target_cols
+                )
+                run_stat_ops.append(op) if op not in run_stat_ops else None
+            elif op._id in self.feat_ops:
+                gdf = self.feat_ops[op._id].apply_op(
+                    gdf, self.columns_ctx, cols_grp, target_cols=target_cols
+                )
+            elif op._id in self.df_ops:
+                gdf = self.df_ops[op._id].apply_op(
+                    gdf,
+                    self.stats,
+                    self.columns_ctx,
+                    cols_grp,
+                    target_cols=target_cols,
+                )
+        return gdf, run_stat_ops
+                
     # run phase
-    def exec_phase(self, itr, tasks):
+    def exec_phase(self, itr, phase_index):
         """ Gather necessary column statistics in single pass.
         """
-        new_path = None
         run_stat_ops = []
         for gdf in itr:
             # put the FE tasks here roll through them
-            for task in tasks:
-                op, cols_grp, target_cols, parents = task
-                if op._id in self.stat_ops:
-                    op = self.stat_ops[op._id]
-                    op.apply_op(
-                        gdf, self.columns_ctx, cols_grp, target_cols=target_cols
-                    )
-                    run_stat_ops.append(op) if op not in run_stat_ops else None
-                elif op._id in self.feat_ops:
-                    gdf = self.feat_ops[op._id].apply_op(
-                        gdf, self.columns_ctx, cols_grp, target_cols=target_cols
-                    )
-                elif op._id in self.df_ops:
-                    gdf = self.df_ops[op._id].apply_op(
-                        gdf,
-                        self.stats,
-                        self.columns_ctx,
-                        cols_grp,
-                        target_cols=target_cols,
-                    )
-                elif isinstance(op, Export):
-                    new_path = op.path
-                    op.apply_op(
-                        gdf, self.columns_ctx, cols_grp, target_cols=target_cols
-                    )
+            for i in range(phase_index):
+                gdf, _ = self.run_ops_for_phase(gdf, self.phases[i], record_stats=False)
+            gdf, run_stat_ops = self.run_ops_for_phase(gdf, self.phases[phase_index])
 #                 pdb.set_trace()
             # if export is activated combine as many GDFs as possible and
             # then write them out cudf.concat([exp_gdf, gdf], axis=0)
@@ -570,7 +571,7 @@ class Workflow:
             stat_op.read_fin()
             # missing bubble up to prerprocessor
         self.get_stats()
-        return new_path
+
 
     def get_stats(self):
         for name, stat_op in self.stat_ops.items():
