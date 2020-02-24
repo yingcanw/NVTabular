@@ -269,7 +269,7 @@ class Workflow:
             config = self.compile_dict_from_list(config)
         self.task_sets = {}
         for task_set in config.keys():
-            self.task_sets[task_set] = self.build_tasks(config[task_set])
+            self.task_sets[task_set] = self.build_tasks(config[task_set], task_set)
             self.master_task_list = self.master_task_list + self.task_sets[task_set]
 
         self.reg_all_ops(self.master_task_list)
@@ -313,7 +313,7 @@ class Workflow:
 
     def phases_export(self):
         """
-        Export each phase from the dependency dictionary.
+        Export each phase from the dependency dictionary, that creates transformations.
         """
         for idx, phase in enumerate(self.phases[:-1]):
             trans_op = False
@@ -459,7 +459,7 @@ class Workflow:
             final_ctx[key] = final_ctx[key] + to_add
         self.columns_ctx["final"]["cols"] = final_ctx
 
-    def build_tasks(self, task_dict: dict):
+    def build_tasks(self, task_dict: dict, task_set):
         """
         task_dict: the task dictionary retrieved from the config 
         Based on input config information 
@@ -481,9 +481,14 @@ class Workflow:
                         break
                     if dep_set:
                         for dep_grp in dep_set:
-                            # handle required stats
+                            # handle required stats of target op on 
+                            # all the dependent columns
+                            for dep in dep_grp:
+                                if task_set in 'PP' and not self.op_preprocess(dep):
+                                    dep_grp.remove(dep)
                             if hasattr(target_op, "req_stats"):
-                                #                                 self.reg_stat_ops(target_op.req_stats)
+                                # check that the required stat is grabbed 
+                                # for all necessary parents
                                 for opo in target_op.req_stats:
                                     # only add if it doesnt already exist=
                                     if not self.is_repeat_op(opo, cols):
@@ -499,6 +504,27 @@ class Workflow:
                             if not self.is_repeat_op(target_op, cols):
                                 dep_tasks.append((target_op, cols, dep_grp, parents))
         return dep_tasks
+    
+    
+    def op_preprocess(self, target_op_id):
+        # find operator given id
+        target_op = self.find_op(target_op_id)
+        # check if operator has preprocessing
+        # if preprocessing, break
+        if hasattr(target_op, 'preprocessing'):
+            return target_op.preprocessing
+        return True
+        
+    
+    def find_op(self, target_op_id):
+        if target_op_id in self.stat_ops:
+            return self.stat_ops[target_op_id]
+        elif target_op_id in self.feat_ops:
+            return self.feat_ops[target_op_id]
+        elif target_op_id in self.df_ops:
+            return self.df_ops[target_op_id]
+        
+    
 
     def is_repeat_op(self, op, cols):
         """
@@ -547,10 +573,10 @@ class Workflow:
             elif op._id in self.df_ops:
                 gdf = self.df_ops[op._id].apply_op(
                     gdf,
-                    self.stats,
                     self.columns_ctx,
                     cols_grp,
                     target_cols=target_cols,
+                    stats_context=self.stats
                 )
         return gdf, run_stat_ops
                 
@@ -558,16 +584,15 @@ class Workflow:
     def exec_phase(self, itr, phase_index):
         """ Gather necessary column statistics in single pass.
         """
-        run_stat_ops = []
         for gdf in itr:
             # put the FE tasks here roll through them
             for i in range(phase_index):
                 gdf, _ = self.run_ops_for_phase(gdf, self.phases[i], record_stats=False)
-            gdf, run_stat_ops = self.run_ops_for_phase(gdf, self.phases[phase_index])
+            gdf, stat_ops_ran = self.run_ops_for_phase(gdf, self.phases[phase_index])
 #                 pdb.set_trace()
             # if export is activated combine as many GDFs as possible and
             # then write them out cudf.concat([exp_gdf, gdf], axis=0)
-        for stat_op in run_stat_ops:
+        for stat_op in stat_ops_ran:
             stat_op.read_fin()
             # missing bubble up to prerprocessor
         self.get_stats()
@@ -643,10 +668,10 @@ class Workflow:
                 elif op._id in self.df_ops:
                     gdf = self.df_ops[op._id].apply_op(
                         gdf,
-                        self.stats,
                         self.columns_ctx,
                         cols_grp,
                         target_cols=target_cols,
+                        stats_context=self.stats,
                     )
         return gdf
 

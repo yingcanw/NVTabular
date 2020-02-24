@@ -65,8 +65,10 @@ class TransformOperator(Operator):
                 "default_out columns have not been specified for this operator"
             )
         return self.default_out
-
+    
+    
     def update_columns_ctx(self, columns_ctx, input_cols, new_cols, pro=False):
+
         """
         columns_ctx: columns context, belonging to the container workflow object
         input_cols: input columns; columns actioned on origin columns context key
@@ -85,15 +87,32 @@ class TransformOperator(Operator):
             columns_ctx["final"]["ctx"][input_cols].append(self._id)
 
     def apply_op(
-        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base"
+        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base", stats_context=None
     ):
-        raise NotImplementedError(
-            """The operation to be applied on the data frame chunk, given the required statistics.
-                """
-        )
+        target_cols = self.get_columns(columns_ctx, input_cols, target_cols)
+        new_gdf = self.op_logic(gdf, target_cols, stats_context=stats_context)
+        self.update_columns_ctx(columns_ctx, input_cols, new_gdf.columns)
+        return self.assemble_new_df(gdf, new_gdf, target_cols)
+        
+    
+    def assemble_new_df(self, origin_gdf, new_gdf, target_columns):
+        if not new_gdf:
+            return origin_gdf
+        if self.replace:
+            origin_gdf[target_columns] = new_gdf
+            # might need to change column names here too
+            return origin_gdf
+        return cudf.concat([origin_gdf, new_gdf], axis=1)
 
-
+        
+    def op_logic(self, gdf, target_columns, stats_context=None):
+        raise NotImplementedError("""Must implement transform in the op_logic method,
+                                     The return value must be a dataframe with all required
+                                     transforms.""")
+        
+        
 class DFOperator(TransformOperator):
+    
     def required_stats(self):
         raise NotImplementedError(
             "Should consist of a list of identifiers, that should map to available statistics"
@@ -366,45 +385,37 @@ class Export(TransformOperator):
         self.nfiles = nfiles
         self.shuffle = True
 
-    def apply_op(
-        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base"
-    ):
+    def op_logic(self, gdf: cudf.DataFrame, target_columns: list, stats_context=None):
         gdf.to_parquet(self.path)
-        return gdf
+        return 
 
 
 class ZeroFill(TransformOperator):
     default_in = CONT
     default_out = CONT
 
-    def apply_op(
-        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base"
-    ):
-        cont_names = self.get_columns(columns_ctx, input_cols, target_cols)
+    def op_logic(self, gdf: cudf.DataFrame, target_columns: list, stats_context=None):
+        cont_names = target_columns
         if not cont_names:
             return gdf
         z_gdf = gdf[cont_names].fillna(0)
         z_gdf.columns = [f"{col}_{self._id}" for col in z_gdf.columns]
         z_gdf = z_gdf * (z_gdf >= 0).astype("int")
-        self.update_columns_ctx(columns_ctx, input_cols, list(z_gdf.columns))
-        return cudf.concat([gdf, z_gdf], axis=1)
+        return z_gdf
 
 
 class LogOp(TransformOperator):
     default_in = CONT
     default_out = CONT
 
-    def apply_op(
-        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base"
-    ):
-        cont_names = self.get_columns(columns_ctx, input_cols, target_cols)
+    def op_logic(self, gdf: cudf.DataFrame, target_columns: list, stats_context=None):
+        cont_names = target_columns
         if not cont_names:
             return gdf
         new_gdf = np.log(gdf[cont_names].astype(np.float32) + 1)
         new_cols = [f"{col}_{self._id}" for col in new_gdf.columns]
         new_gdf.columns = new_cols
-        self.update_columns_ctx(columns_ctx, input_cols, list(new_cols))
-        return cudf.concat([gdf, new_gdf], axis=1)
+        return new_gdf
 
 
 class Normalize(DFOperator):
@@ -418,32 +429,23 @@ class Normalize(DFOperator):
     def req_stats(self):
         return [Moments()]
 
-    def apply_op(
-        self,
-        gdf: cudf.DataFrame,
-        stats_context: dict,
-        columns_ctx: dict,
-        input_cols,
-        target_cols="base",
-    ):
-        cont_names = self.get_columns(columns_ctx, input_cols, target_cols)
+    def op_logic(self, gdf: cudf.DataFrame, target_columns: list, stats_context=None):
+        cont_names = target_columns
         if not cont_names or not stats_context["stds"]:
-            return gdf
-        gdf, new_cols = self.apply_mean_std(gdf, stats_context, cont_names)
-        self.update_columns_ctx(columns_ctx, input_cols, list(new_cols))
+            return 
+        gdf = self.apply_mean_std(gdf, stats_context, cont_names)
         return gdf
 
     def apply_mean_std(self, gdf, stats_context, cont_names):
-        new_cols = []
+        new_gdf = cudf.DataFrame()
         for name in cont_names:
             if stats_context["stds"][name] > 0:
                 new_col = f"{name}_{self._id}"
-                gdf[new_col] = (gdf[name] - stats_context["means"][name]) / (
+                new_gdf[new_col] = (gdf[name] - stats_context["means"][name]) / (
                     stats_context["stds"][name]
                 )
-                gdf[new_col] = gdf[new_col].astype("float32")
-                new_cols.append(new_col)
-        return gdf, new_cols
+                new_gdf[new_col] = new_gdf[new_col].astype("float32")
+        return new_gdf
 
 
 class FillMissing(DFOperator):
@@ -474,20 +476,12 @@ class FillMissing(DFOperator):
     def req_stats(self):
         return [Median()]
 
-    def apply_op(
-        self,
-        gdf: cudf.DataFrame,
-        stats_context: dict,
-        columns_ctx: dict,
-        input_cols,
-        target_cols="base",
-    ):
-        cont_names = self.get_columns(columns_ctx, input_cols, target_cols)
+    def op_logic(self, gdf: cudf.DataFrame, target_columns: list, stats_context=None):
+        cont_names = target_columns
         if not cont_names or not stats_context["medians"]:
             return gdf
         z_gdf = self.apply_filler(gdf[cont_names], stats_context, cont_names)
-        self.update_columns_ctx(columns_ctx, input_cols, list(z_gdf.columns))
-        return cudf.concat([gdf, z_gdf], axis=1)
+        return z_gdf
 
     def apply_filler(self, gdf, stats_context, cont_names):
         na_names = [name for name in cont_names if gdf[name].isna().sum()]
@@ -499,6 +493,7 @@ class FillMissing(DFOperator):
         return gdf
 
     def add_na_indicators(self, gdf: cudf.DataFrame, na_names, cat_names):
+        gdf = cudf.DataFrame()
         for name in na_names:
             name_na = name + "_na"
             gdf[name_na] = gdf[name].isna()
@@ -520,15 +515,9 @@ class Categorify(DFOperator):
     def req_stats(self):
         return [Encoder()]
 
-    def apply_op(
-        self,
-        gdf: cudf.DataFrame,
-        stats_context: dict,
-        columns_ctx: dict,
-        input_cols,
-        target_cols="base",
-    ):
-        cat_names = self.get_columns(columns_ctx, input_cols, target_cols)
+    def op_logic(self, gdf: cudf.DataFrame, target_columns: list, stats_context=None):
+        cat_names = target_columns
+        new_gdf = cudf.DataFrame()
         if not cat_names:
             return gdf
         cat_names = [name for name in cat_names if name in gdf.columns]
@@ -536,10 +525,9 @@ class Categorify(DFOperator):
         for name in cat_names:
             new_col = f"{name}_{self._id}"
             new_cols.append(new_col)
-            gdf[new_col] = stats_context["encoders"][name].transform(gdf[name])
-            gdf[new_col] = gdf[new_col].astype("int64")
-        self.update_columns_ctx(columns_ctx, input_cols, list(new_cols))
-        return gdf
+            new_gdf[new_col] = stats_context["encoders"][name].transform(gdf[name])
+            new_gdf[new_col] = new_gdf[new_col].astype("int64")
+        return new_gdf
 
     def get_emb_sz(self, encoders, cat_names):
         work_in = {}
