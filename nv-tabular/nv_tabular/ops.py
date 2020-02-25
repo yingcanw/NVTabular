@@ -83,8 +83,9 @@ class TransformOperator(Operator):
             input_cols = self.default_out
         columns_ctx[input_cols][new_key] = []
         columns_ctx[input_cols][new_key] = list(new_cols)
-        if not self.preprocessing:
+        if not self.preprocessing and not self._id in columns_ctx["final"]["ctx"][input_cols]:
             columns_ctx["final"]["ctx"][input_cols].append(self._id)
+            
 
     def apply_op(
         self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base", stats_context=None
@@ -533,7 +534,7 @@ class Categorify(DFOperator):
         work_in = {}
         for key in encoders.keys():
             work_in[key] = encoders[key] + 1
-        ret_list = [(n, self.def_emb_sz(work_in, n)) for n in sorted(cat_names)]
+        ret_list = [(n, self.def_emb_sz(work_in, n)) for n in sorted(cat_names, key=lambda entry: entry.split("_")[0])]
         return ret_list
 
     def emb_sz_rule(self, n_cat: int) -> int:

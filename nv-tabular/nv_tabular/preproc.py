@@ -456,7 +456,8 @@ class Workflow:
                 )
             if not key in final_ctx.keys():
                 final_ctx[key] = to_add
-            final_ctx[key] = final_ctx[key] + to_add
+            else:
+                final_ctx[key] = final_ctx[key] + to_add
         self.columns_ctx["final"]["cols"] = final_ctx
 
     def build_tasks(self, task_dict: dict, task_set):
@@ -657,22 +658,10 @@ class Workflow:
         # run the PP ops
         start = start_phase if start_phase else 0
         end = end_phase if end_phase else len(self.phases)
-        for tasks in self.phases[start:end]:
-            for task in tasks:
-                op, cols_grp, target_cols, parents = task
-
-                if op._id in self.feat_ops:
-                    gdf = self.feat_ops[op._id].apply_op(
-                        gdf, self.columns_ctx, cols_grp, target_cols=target_cols
-                    )
-                elif op._id in self.df_ops:
-                    gdf = self.df_ops[op._id].apply_op(
-                        gdf,
-                        self.columns_ctx,
-                        cols_grp,
-                        target_cols=target_cols,
-                        stats_context=self.stats,
-                    )
+        for phase_index in range(start, end):
+            for i in range(phase_index):
+                gdf, _ = self.run_ops_for_phase(gdf, self.phases[i], record_stats=False)
+            gdf, _ = self.run_ops_for_phase(gdf, self.phases[phase_index], record_stats=False)
         return gdf
 
     def clear_stats(self):
@@ -703,14 +692,13 @@ class Workflow:
                 del g
 
         cats, conts, label = {}, {}, {}
+        cat_names = sorted(self.columns_ctx["final"]["cols"]["categorical"], key=lambda entry: entry.split("_")[0])
+        cont_names = sorted(self.columns_ctx["final"]["cols"]["continuous"])
+        label_name = sorted(self.columns_ctx["final"]["cols"]["label"])
         for gdf in itr:
             if apply_ops:
                 gdf = self.apply_ops(gdf)
-
-            cat_names = self.columns_ctx["final"]["cols"]["categorical"]
-            cont_names = self.columns_ctx["final"]["cols"]["continuous"]
-            label_name = self.columns_ctx["final"]["cols"]["label"]
-
+            
             gdf_cats, gdf_conts, gdf_label = (
                 gdf[cat_names],
                 gdf[cont_names],
@@ -725,7 +713,7 @@ class Workflow:
             if len(gdf_label) > 0:
                 _to_tensor(gdf_label, torch.float32, label, to_cpu=self.to_cpu)
 
-        cats_list = [cats[x] for x in sorted(cats.keys())] if cats else None
+        cats_list = [cats[x] for x in sorted(cats.keys(), key=lambda entry: entry.split("_")[0])] if cats else None
         conts_list = [conts[x] for x in sorted(conts.keys())] if conts else None
         label_list = [label[x] for x in sorted(label.keys())] if label else None
 

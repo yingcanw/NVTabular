@@ -158,13 +158,13 @@ class DLCollator:
                 self.label_name = (
                     self.label_name + self.preproc.columns_ctx["label"][key]
                 )
-            self.cat_names = list(set(self.cat_names))
-            self.cont_names = list(set(self.cont_names))
-            self.label_name = list(set(self.label_name))
+            self.cat_names = sorted(list(set(self.cat_names)))
+            self.cont_names = sorted(list(set(self.cont_names)))
+            self.label_name = sorted(list(set(self.label_name)))
         else:
-            self.cat_names = cat_names if cat_names else []
-            self.cont_names = cont_names if cont_names else []
-            self.label_name = label_name if label_name else []
+            self.cat_names = sorted(cat_names) if cat_names else []
+            self.cont_names = sorted(cont_names) if cont_names else []
+            self.label_name = sorted(label_name) if label_name else []
 
     def gdf_col(self, gdf):
         batch = self.transform(
