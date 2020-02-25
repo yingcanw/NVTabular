@@ -67,7 +67,7 @@ class TransformOperator(Operator):
         return self.default_out
     
     
-    def update_columns_ctx(self, columns_ctx, input_cols, new_cols, pro=False):
+    def update_columns_ctx(self, columns_ctx, input_cols, new_cols, origin_targets, pro=False):
 
         """
         columns_ctx: columns context, belonging to the container workflow object
@@ -78,10 +78,17 @@ class TransformOperator(Operator):
         of the container workflow object, after an operator has created new columns via a 
         new transformation of a subset or entire dataset.
         """
+
         new_key = self._id
+
         if not pro:
             input_cols = self.default_out
         columns_ctx[input_cols][new_key] = []
+        if self.replace:
+            # not making new columns instead using old ones
+            # must reference original target with new operator for chaining
+            columns_ctx[input_cols][new_key] = origin_targets
+            return
         columns_ctx[input_cols][new_key] = list(new_cols)
         if not self.preprocessing and not self._id in columns_ctx["final"]["ctx"][input_cols]:
             columns_ctx["final"]["ctx"][input_cols].append(self._id)
@@ -90,10 +97,10 @@ class TransformOperator(Operator):
     def apply_op(
         self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base", stats_context=None
     ):
-        target_cols = self.get_columns(columns_ctx, input_cols, target_cols)
-        new_gdf = self.op_logic(gdf, target_cols, stats_context=stats_context)
-        self.update_columns_ctx(columns_ctx, input_cols, new_gdf.columns)
-        return self.assemble_new_df(gdf, new_gdf, target_cols)
+        target_columns = self.get_columns(columns_ctx, input_cols, target_cols)
+        new_gdf = self.op_logic(gdf, target_columns, stats_context=stats_context)
+        self.update_columns_ctx(columns_ctx, input_cols, new_gdf.columns, target_columns)
+        return self.assemble_new_df(gdf, new_gdf, target_columns)
         
     
     def assemble_new_df(self, origin_gdf, new_gdf, target_columns):

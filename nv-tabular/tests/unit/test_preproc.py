@@ -317,7 +317,8 @@ def test_pq_to_pq_processed(tmpdir, datasets):
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
 @pytest.mark.parametrize("dump", [True, False])
-def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
+@pytest.mark.parametrize("replace", [True, False])
+def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine, replace):
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
 
     if engine == "parquet":
@@ -340,8 +341,8 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
 
     config = pp.get_new_config()
     # add operators with dependencies
-    config["FE"]["continuous"] = [[ops.FillMissing(), ops.LogOp()]]
-    config["PP"]["continuous"] = [[ops.LogOp(), ops.Normalize()]]
+    config["FE"]["continuous"] = [[ops.FillMissing(replace=replace), ops.LogOp()]]
+    config["PP"]["continuous"] = [[ops.LogOp(replace=replace), ops.Normalize()]]
     config["PP"]["categorical"] = [ops.Categorify()]
 
     processor = pp.Workflow(
@@ -376,25 +377,28 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine):
 
     # Check mean and std - No good right now we have to add all other changes; Zerofill, Log
 
+    concat_ops = "_FillMissing_LogOp"
+    if replace:
+        concat_ops = ""
     assert math.isclose(
         get_norms(df.x).mean(),
-        processor.stats["means"]["x_FillMissing_LogOp"],
+        processor.stats["means"]["x"+concat_ops],
         rel_tol=1e-1,
     )
     assert math.isclose(
         get_norms(df.y).mean(),
-        processor.stats["means"]["y_FillMissing_LogOp"],
+        processor.stats["means"]["y"+concat_ops],
         rel_tol=1e-1,
     )
     #     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_FillMissing_LogOp"], rel_tol=1e-4)
     assert math.isclose(
         get_norms(df.x).std(),
-        processor.stats["stds"]["x_FillMissing_LogOp"],
+        processor.stats["stds"]["x"+concat_ops],
         rel_tol=1e-1,
     )
     assert math.isclose(
         get_norms(df.y).std(),
-        processor.stats["stds"]["y_FillMissing_LogOp"],
+        processor.stats["stds"]["y"+concat_ops],
         rel_tol=1e-1,
     )
     #     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_FillMissing_LogOp"], rel_tol=1e-3)
