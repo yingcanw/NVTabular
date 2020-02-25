@@ -23,7 +23,7 @@ def _enforce_npint32(y: cudf.Series) -> cudf.Series:
 
 
 class DLLabelEncoder(object):
-    def __init__(self, col, cats=None, path=None, limit_frac=0.1, file_paths=None):
+    def __init__(self, col, cats=None, path=None, limit_frac=0.05, file_paths=None):
         # required because cudf.series does not compute bool type
         self._cats = cats if type(cats) == cudf.Series else cudf.Series([cats])
         # writer needs to be mapped to same file in folder.

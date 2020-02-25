@@ -136,9 +136,6 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     config["FE"]["continuous"] = [ops.ZeroFill()]
     config["PP"]["continuous"] = [[ops.ZeroFill(), ops.Normalize()]]
     config["PP"]["categorical"] = [ops.Categorify()]
-    #     config["FE"]["continuous"] = [{ops.ZeroFill()._id: [[]]}]
-    #     config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
-    #     config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.ZeroFill()._id]]}]
 
     processor = pp.Workflow(
         cat_names=cat_names,
@@ -234,9 +231,6 @@ def test_pq_to_pq_processed(tmpdir, datasets):
     config["FE"]["continuous"] = [[ops.FillMissing(), ops.LogOp()]]
     config["PP"]["continuous"] = [[ops.LogOp(), ops.Normalize()]]
     config["PP"]["categorical"] = [ops.Categorify()]
-    #     config["FE"]["continuous"] = [{ops.FillMissing()._id: [[]]}]
-    #     config["PP"]["categorical"] = [{ops.Categorify()._id: [[]]}]
-    #     config["PP"]["continuous"] = [{ops.Normalize()._id: [[ops.FillMissing()._id]]}]
 
     processor = pp.Workflow(
         cat_names=cat_names,
@@ -272,6 +266,8 @@ def test_pq_to_pq_processed(tmpdir, datasets):
     return processor.ds_exports
 
 
+# This test was removed because the functionality was taken out
+# due to an infinite loop behavior that was reported many times.
 # def test_estimated_row_size(tmpdir):
 #     # Make sure the row_size estimate is what we expect...
 #     size = 1000
@@ -382,26 +378,21 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine, rep
         concat_ops = ""
     assert math.isclose(
         get_norms(df.x).mean(),
-        processor.stats["means"]["x"+concat_ops],
+        processor.stats["means"]["x" + concat_ops],
         rel_tol=1e-1,
     )
     assert math.isclose(
         get_norms(df.y).mean(),
-        processor.stats["means"]["y"+concat_ops],
+        processor.stats["means"]["y" + concat_ops],
         rel_tol=1e-1,
     )
-    #     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_FillMissing_LogOp"], rel_tol=1e-4)
+
     assert math.isclose(
-        get_norms(df.x).std(),
-        processor.stats["stds"]["x"+concat_ops],
-        rel_tol=1e-1,
+        get_norms(df.x).std(), processor.stats["stds"]["x" + concat_ops], rel_tol=1e-1,
     )
     assert math.isclose(
-        get_norms(df.y).std(),
-        processor.stats["stds"]["y"+concat_ops],
-        rel_tol=1e-1,
+        get_norms(df.y).std(), processor.stats["stds"]["y" + concat_ops], rel_tol=1e-1,
     )
-    #     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_FillMissing_LogOp"], rel_tol=1e-3)
 
     # Check that categories match
     if engine == "parquet":
@@ -438,6 +429,7 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine, rep
     )
     assert num_rows == len(df_pp)
     return processor.ds_exports
+
 
 @cleanup
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
@@ -519,9 +511,6 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine, op_col
         processor.stats["stds"]["x_FillMissing_LogOp"],
         rel_tol=1e-1,
     )
-
-    #     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_FillMissing_LogOp"], rel_tol=1e-4)
-    #     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_FillMissing_LogOp"], rel_tol=1e-3)
 
     # Check that categories match
     if engine == "parquet":

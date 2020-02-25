@@ -65,9 +65,10 @@ class TransformOperator(Operator):
                 "default_out columns have not been specified for this operator"
             )
         return self.default_out
-    
-    
-    def update_columns_ctx(self, columns_ctx, input_cols, new_cols, origin_targets, pro=False):
+
+    def update_columns_ctx(
+        self, columns_ctx, input_cols, new_cols, origin_targets, pro=False
+    ):
 
         """
         columns_ctx: columns context, belonging to the container workflow object
@@ -90,37 +91,44 @@ class TransformOperator(Operator):
             columns_ctx[input_cols][new_key] = origin_targets
             return
         columns_ctx[input_cols][new_key] = list(new_cols)
-        if not self.preprocessing and not self._id in columns_ctx["final"]["ctx"][input_cols]:
+        if (
+            not self.preprocessing
+            and not self._id in columns_ctx["final"]["ctx"][input_cols]
+        ):
             columns_ctx["final"]["ctx"][input_cols].append(self._id)
-            
 
     def apply_op(
-        self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base", stats_context=None
+        self,
+        gdf: cudf.DataFrame,
+        columns_ctx: dict,
+        input_cols,
+        target_cols="base",
+        stats_context=None,
     ):
         target_columns = self.get_columns(columns_ctx, input_cols, target_cols)
         new_gdf = self.op_logic(gdf, target_columns, stats_context=stats_context)
-        self.update_columns_ctx(columns_ctx, input_cols, new_gdf.columns, target_columns)
+        self.update_columns_ctx(
+            columns_ctx, input_cols, new_gdf.columns, target_columns
+        )
         return self.assemble_new_df(gdf, new_gdf, target_columns)
-        
-    
+
     def assemble_new_df(self, origin_gdf, new_gdf, target_columns):
         if not new_gdf:
             return origin_gdf
         if self.replace:
             origin_gdf[target_columns] = new_gdf
-            # might need to change column names here too
             return origin_gdf
         return cudf.concat([origin_gdf, new_gdf], axis=1)
 
-        
     def op_logic(self, gdf, target_columns, stats_context=None):
-        raise NotImplementedError("""Must implement transform in the op_logic method,
+        raise NotImplementedError(
+            """Must implement transform in the op_logic method,
                                      The return value must be a dataframe with all required
-                                     transforms.""")
-        
-        
+                                     transforms."""
+        )
+
+
 class DFOperator(TransformOperator):
-    
     def required_stats(self):
         raise NotImplementedError(
             "Should consist of a list of identifiers, that should map to available statistics"
@@ -395,7 +403,7 @@ class Export(TransformOperator):
 
     def op_logic(self, gdf: cudf.DataFrame, target_columns: list, stats_context=None):
         gdf.to_parquet(self.path)
-        return 
+        return
 
 
 class ZeroFill(TransformOperator):
@@ -440,7 +448,7 @@ class Normalize(DFOperator):
     def op_logic(self, gdf: cudf.DataFrame, target_columns: list, stats_context=None):
         cont_names = target_columns
         if not cont_names or not stats_context["stds"]:
-            return 
+            return
         gdf = self.apply_mean_std(gdf, stats_context, cont_names)
         return gdf
 
@@ -541,7 +549,11 @@ class Categorify(DFOperator):
         work_in = {}
         for key in encoders.keys():
             work_in[key] = encoders[key] + 1
-        ret_list = [(n, self.def_emb_sz(work_in, n)) for n in sorted(cat_names, key=lambda entry: entry.split("_")[0])]
+        # sorted key required to ensure same sort occurs for all values
+        ret_list = [
+            (n, self.def_emb_sz(work_in, n))
+            for n in sorted(cat_names, key=lambda entry: entry.split("_")[0])
+        ]
         return ret_list
 
     def emb_sz_rule(self, n_cat: int) -> int:

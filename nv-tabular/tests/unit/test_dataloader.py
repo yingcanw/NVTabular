@@ -136,7 +136,6 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine, preprocess
         processor.stats["means"]["y_FillMissing_LogOp"],
         rel_tol=1e-2,
     )
-    #     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_FillMissing"], rel_tol=1e-4)
     assert math.isclose(
         get_norms(df.x).std(),
         processor.stats["stds"]["x_FillMissing_LogOp"],
@@ -147,7 +146,6 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine, preprocess
         processor.stats["stds"]["y_FillMissing_LogOp"],
         rel_tol=1e-2,
     )
-    #     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_FillMissing"], rel_tol=1e-3)
 
     # Check median (TODO: Improve the accuracy)
     x_median = df.x.dropna().quantile(0.5, interpolation="linear")

@@ -98,7 +98,6 @@ class Workflow:
         else:
             # create blank config and for later fill in
             self.config = get_new_list_config()
-            warnings.warn("No Config was loaded, unable to create task list")
 
         self.clear_stats()
 
@@ -192,10 +191,6 @@ class Workflow:
             for stat in stat_op.registered_stats():
                 if stat not in self.stats:
                     self.stats[stat] = {}
-                else:
-                    warnings.warn(
-                        f"The following statistic was not added because it already exists: {stat}"
-                    )
             # add actual statistic operator, after all stats added
             self.stat_ops[stat_op._id] = stat_op
 
@@ -482,13 +477,13 @@ class Workflow:
                         break
                     if dep_set:
                         for dep_grp in dep_set:
-                            # handle required stats of target op on 
+                            # handle required stats of target op on
                             # all the dependent columns
                             for dep in dep_grp:
-                                if task_set in 'PP' and not self.op_preprocess(dep):
+                                if task_set in "PP" and not self.op_preprocess(dep):
                                     dep_grp.remove(dep)
                             if hasattr(target_op, "req_stats"):
-                                # check that the required stat is grabbed 
+                                # check that the required stat is grabbed
                                 # for all necessary parents
                                 for opo in target_op.req_stats:
                                     # only add if it doesnt already exist=
@@ -505,18 +500,16 @@ class Workflow:
                             if not self.is_repeat_op(target_op, cols):
                                 dep_tasks.append((target_op, cols, dep_grp, parents))
         return dep_tasks
-    
-    
+
     def op_preprocess(self, target_op_id):
         # find operator given id
         target_op = self.find_op(target_op_id)
         # check if operator has preprocessing
         # if preprocessing, break
-        if hasattr(target_op, 'preprocessing'):
+        if hasattr(target_op, "preprocessing"):
             return target_op.preprocessing
         return True
-        
-    
+
     def find_op(self, target_op_id):
         if target_op_id in self.stat_ops:
             return self.stat_ops[target_op_id]
@@ -524,8 +517,6 @@ class Workflow:
             return self.feat_ops[target_op_id]
         elif target_op_id in self.df_ops:
             return self.df_ops[target_op_id]
-        
-    
 
     def is_repeat_op(self, op, cols):
         """
@@ -563,9 +554,7 @@ class Workflow:
             op, cols_grp, target_cols, parents = task
             if record_stats and op._id in self.stat_ops:
                 op = self.stat_ops[op._id]
-                op.apply_op(
-                    gdf, self.columns_ctx, cols_grp, target_cols=target_cols
-                )
+                op.apply_op(gdf, self.columns_ctx, cols_grp, target_cols=target_cols)
                 run_stat_ops.append(op) if op not in run_stat_ops else None
             elif op._id in self.feat_ops:
                 gdf = self.feat_ops[op._id].apply_op(
@@ -577,10 +566,10 @@ class Workflow:
                     self.columns_ctx,
                     cols_grp,
                     target_cols=target_cols,
-                    stats_context=self.stats
+                    stats_context=self.stats,
                 )
         return gdf, run_stat_ops
-                
+
     # run phase
     def exec_phase(self, itr, phase_index):
         """ Gather necessary column statistics in single pass.
@@ -590,14 +579,13 @@ class Workflow:
             for i in range(phase_index):
                 gdf, _ = self.run_ops_for_phase(gdf, self.phases[i], record_stats=False)
             gdf, stat_ops_ran = self.run_ops_for_phase(gdf, self.phases[phase_index])
-#                 pdb.set_trace()
-            # if export is activated combine as many GDFs as possible and
-            # then write them out cudf.concat([exp_gdf, gdf], axis=0)
+        #                 pdb.set_trace()
+        # if export is activated combine as many GDFs as possible and
+        # then write them out cudf.concat([exp_gdf, gdf], axis=0)
         for stat_op in stat_ops_ran:
             stat_op.read_fin()
             # missing bubble up to prerprocessor
         self.get_stats()
-
 
     def get_stats(self):
         for name, stat_op in self.stat_ops.items():
@@ -646,10 +634,10 @@ class Workflow:
             )
         self.reg_all_ops(self.master_task_list)
 
-    def apply_ops(self, gdf, start_phase=None, end_phase=None, run_fe=True):
+    def apply_ops(self, gdf, start_phase=None, end_phase=None, record_stats=False):
         """
         gdf: cudf dataframe
-        run_fe: bool; run feature engineering phase before apply ops
+        record_stats: bool; run stats recording within run
         Controls the application of registered preprocessing phase op
         tasks
         """
@@ -660,8 +648,12 @@ class Workflow:
         end = end_phase if end_phase else len(self.phases)
         for phase_index in range(start, end):
             for i in range(phase_index):
-                gdf, _ = self.run_ops_for_phase(gdf, self.phases[i], record_stats=False)
-            gdf, _ = self.run_ops_for_phase(gdf, self.phases[phase_index], record_stats=False)
+                gdf, _ = self.run_ops_for_phase(
+                    gdf, self.phases[i], record_stats=record_stats
+                )
+            gdf, _ = self.run_ops_for_phase(
+                gdf, self.phases[phase_index], record_stats=record_stats
+            )
         return gdf
 
     def clear_stats(self):
@@ -692,13 +684,16 @@ class Workflow:
                 del g
 
         cats, conts, label = {}, {}, {}
-        cat_names = sorted(self.columns_ctx["final"]["cols"]["categorical"], key=lambda entry: entry.split("_")[0])
+        cat_names = sorted(
+            self.columns_ctx["final"]["cols"]["categorical"],
+            key=lambda entry: entry.split("_")[0],
+        )
         cont_names = sorted(self.columns_ctx["final"]["cols"]["continuous"])
         label_name = sorted(self.columns_ctx["final"]["cols"]["label"])
         for gdf in itr:
             if apply_ops:
                 gdf = self.apply_ops(gdf)
-            
+
             gdf_cats, gdf_conts, gdf_label = (
                 gdf[cat_names],
                 gdf[cont_names],
@@ -713,7 +708,14 @@ class Workflow:
             if len(gdf_label) > 0:
                 _to_tensor(gdf_label, torch.float32, label, to_cpu=self.to_cpu)
 
-        cats_list = [cats[x] for x in sorted(cats.keys(), key=lambda entry: entry.split("_")[0])] if cats else None
+        cats_list = (
+            [
+                cats[x]
+                for x in sorted(cats.keys(), key=lambda entry: entry.split("_")[0])
+            ]
+            if cats
+            else None
+        )
         conts_list = [conts[x] for x in sorted(conts.keys())] if conts else None
         label_list = [label[x] for x in sorted(label.keys())] if label else None
 

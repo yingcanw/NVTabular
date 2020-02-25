@@ -99,7 +99,11 @@ def create_tensors(gdf, preproc, cat_names, cont_names, label_name, to_cpu=False
         to_tensor(gdf_label, torch.float32, label, to_cpu=to_cpu)
     del gdf_cats, gdf_label, gdf_conts
     tar_col = cats.keys()
-    cats_list = [cats[x] for x in sorted(cats.keys())] if cats else None
+    cats_list = (
+        [cats[x] for x in sorted(cats.keys(), key=lambda entry: entry.split("_")[0])]
+        if cats
+        else None
+    )
     conts_list = [conts[x] for x in sorted(conts.keys())] if conts else None
     label_list = [label[x] for x in sorted(label.keys())] if label else None
     del cats, conts, label
