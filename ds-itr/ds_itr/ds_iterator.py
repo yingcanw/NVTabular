@@ -99,14 +99,9 @@ class PQFileReader(GPUFileReader):
         #       strings/categoricals (parquet only stores uniques)
         self.row_size = self.row_size or 0
         if self.num_rows > 0 and self.row_size == 0:
-            for col in self.reader(self.file, nrows=min(10, self.num_rows))._columns:
-                if col.dtype.name in "object":
-                    # Use maximum of first 10 rows
-                    target = cudf.Series(col).nans_to_nulls().dropna()
-                    max_size = len(max(target)) // 2
-                    self.row_size += int(max_size)
-                else:
-                    self.row_size += col.dtype.itemsize
+            for col in self.reader(self.file, num_rows=1)._columns:
+
+                self.row_size += col.dtype.itemsize
             self.file.seek(0)
         # Check if wwe are using row groups
         self.use_row_groups = kwargs.get("use_row_groups", None)
