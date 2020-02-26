@@ -33,7 +33,7 @@ def _enforce_npint32(y: cudf.Series) -> cudf.Series:
 
 
 class DLLabelEncoder(object):
-    def __init__(self, col, cats=None, path=None, limit_frac=0.1, 
+    def __init__(self, col, cats=None, path=None, limit_frac=0.1, limit_frac_host=0.8,
                  gpu_mem_util_limit = 0.8, cpu_mem_util_limit = 0.8, 
                  gpu_mem_trans_use = 0.8, file_paths=None, filter_freq=0):
         # required because cudf.series does not compute bool type
@@ -53,6 +53,7 @@ class DLLabelEncoder(object):
                 ]
         self.col = col
         self.limit_frac = limit_frac
+        self.limit_frac_host = limit_frac_host
         self.gpu_mem_util_limit = gpu_mem_util_limit
         self.cpu_mem_util_limit = cpu_mem_util_limit
         self.gpu_mem_trans_use = gpu_mem_trans_use
@@ -183,14 +184,8 @@ class DLLabelEncoder(object):
                 os.makedirs(self.folder_path)
 
             self.dump_cats()
-
-    def fit_freq(self, y: cudf.Series):
-        y_counts = y.value_counts()
-        if len(self._cats_counts) == 0:
-            self._cats_counts = y_counts
-        else:
-            self._cats_counts = self._cats_counts.add(y_counts, fill_value=0)
-
+    
+    def unload_gpu_mem(self):
         gpu_mem = numba.cuda.current_context().get_memory_info()
         gpu_mem_util = (gpu_mem[1] - gpu_mem[0]) / gpu_mem[1]
         series_size_gpu = self.series_size(self._cats_counts)
@@ -205,12 +200,23 @@ class DLLabelEncoder(object):
             self._cats_counts = cudf.Series([]) 
 
             cpu_mem = psutil.virtual_memory()
-            cpu_mem_util = cpu_mem[2]
+            cpu_mem_util = (cpu_mem[0] - cpu_mem[1]) / cpu_mem[0]
             series_host_size = self.series_size(self._cats_counts_host)
 
-            if series_host_size > (cpu_mem[1] * self.limit_frac) or cpu_mem_util > self.cpu_mem_util_limit:
-                #self.disk_used = True
-                print("Unload to files")
+            if series_host_size > (cpu_mem[1] * self.limit_frac_host) or cpu_mem_util > self.cpu_mem_util_limit:
+                # self.disk_used = True
+                raise Exception('Unloading host memory to disk is not implemented!')
+
+    def fit_freq(self, y: cudf.Series):
+        self.unload_gpu_mem()
+
+        y_counts = y.value_counts()
+        if len(self._cats_counts) == 0:
+            self._cats_counts = y_counts
+        else:
+            self._cats_counts = self._cats_counts.add(y_counts, fill_value=0)
+
+        self.unload_gpu_mem()
         
     # Note: Add 0: None row to _cats.
     def fit_freq_finalize(self):
