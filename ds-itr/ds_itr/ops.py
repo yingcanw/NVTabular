@@ -265,9 +265,9 @@ class Encoder(StatOperator):
                     self.encoders[name] = DLLabelEncoder(name, limit_frac=0.5, filter_freq=self.filter_freq)
                 else:
                     self.encoders[name] = DLLabelEncoder(name)
-
                 gdf[name].append([None])
-                self.encoders[name].fit(gdf[name])
+
+            self.encoders[name].fit(gdf[name])
         return
 
     def read_fin(self, *args):
