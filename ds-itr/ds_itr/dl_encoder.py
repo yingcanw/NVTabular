@@ -35,7 +35,7 @@ def _enforce_npint32(y: cudf.Series) -> cudf.Series:
 class DLLabelEncoder(object):
     def __init__(self, col, cats=None, path=None, limit_frac=0.1, 
                  gpu_mem_util_limit = 0.8, cpu_mem_util_limit = 0.8, 
-                 gpu_mem_trans_use = 0.8, file_paths=None):
+                 gpu_mem_trans_use = 0.8, file_paths=None, filter_freq=0):
         # required because cudf.series does not compute bool type
         self._cats_counts = cudf.Series([]) 
         self._cats_counts_host = None
@@ -57,6 +57,7 @@ class DLLabelEncoder(object):
         self.cpu_mem_util_limit = cpu_mem_util_limit
         self.gpu_mem_trans_use = gpu_mem_trans_use
         self.sub_cats_size = 50000
+        self.filter_freq = filter_freq
 
     def label_encoding(self, vals, cats, dtype=None, na_sentinel=-1):
         if dtype is None:
@@ -73,7 +74,13 @@ class DLLabelEncoder(object):
 
         return codes._copy_construct(name=None, index=vals.index)
 
-    def transform_old(self, y: cudf.Series, unk_idx=0) -> cudf.Series:
+    def transform(self, y: cudf.Series, unk_idx=0) -> cudf.Series:
+        if self.filter_freq > 1:
+            return self.transform_freq(y)
+        else:
+            return self.transform_unique(y, unk_idx)
+
+    def transform_unique(self, y: cudf.Series, unk_idx=0) -> cudf.Series:
         """
         Transform an input into its categorical keys.
         This is intended for use with small inputs relative to the size of the
@@ -125,7 +132,7 @@ class DLLabelEncoder(object):
             encoded = cudf.Series(y.label_encoding(self._cats, na_sentinel=0))
         return encoded[:].replace(-1, 0)
 
-    def transform(self, y: cudf.Series, unk_idx=0) -> cudf.Series:
+    def transform_freq(self, y: cudf.Series) -> cudf.Series:
         # Need to watch out for None calls now
         if self.host_mem_used is False and self.disk_used is False:
             encoded = cudf.Series(y.label_encoding(self._cats, na_sentinel=0))
@@ -154,7 +161,13 @@ class DLLabelEncoder(object):
         else:
             return s.dtype.itemsize * len(s)
 
-    def fit_old(self, y: cudf.Series):
+    def fit(self, y: cudf.Series):
+        if self.filter_freq > 1:
+            self.fit_freq(y)
+        else:
+            self.fit_unique(y)
+
+    def fit_unique(self, y: cudf.Series):
         y = _enforce_str(y).reset_index(drop=True)
         if self._cats.empty:
             self._cats = self.one_cycle(y)
@@ -171,8 +184,7 @@ class DLLabelEncoder(object):
 
             self.dump_cats()
 
-    def fit(self, y: cudf.Series):
-        #y = _enforce_str(y).reset_index(drop=True)
+    def fit_freq(self, y: cudf.Series):
         y_counts = y.value_counts()
         if len(self._cats_counts) == 0:
             self._cats_counts = y_counts
@@ -201,15 +213,15 @@ class DLLabelEncoder(object):
                 print("Unload to files")
         
     # Note: Add 0: None row to _cats.
-    def fit_finalize(self, filter_freq=1):
+    def fit_freq_finalize(self):
         total_cats = 0
         if self.host_mem_used is False and self.disk_used is False:
-            self._cats = cudf.Series(self._cats_counts[self._cats_counts >= filter_freq].index)
+            self._cats = cudf.Series(self._cats_counts[self._cats_counts >= self.filter_freq].index)
             self._cats = cudf.Series([None]).append(self._cats).reset_index(drop=True)
             total_cats = self._cats.shape[0]
         elif self.disk_used is False:
             self._cats_counts_host = self._cats_counts_host.add(self._cats_counts.to_pandas(), fill_value=0)
-            self._cats_host = pd.Series(self._cats_counts_host[self._cats_counts_host >= filter_freq].index)
+            self._cats_host = pd.Series(self._cats_counts_host[self._cats_counts_host >= self.filter_freq].index)
             self._cats_host = pd.Series([None]).append(self._cats_host).reset_index(drop=True)
             self._cats = cudf.Series()
             total_cats = self._cats_host.shape[0]

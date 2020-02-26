@@ -249,7 +249,7 @@ class Encoder(StatOperator):
     encoders = {}
     categories = {}
 
-    def __init__(self, filter_freq=1):
+    def __init__(self, filter_freq=0):
         self.filter_freq = filter_freq
 
     def read_itr(
@@ -261,16 +261,23 @@ class Encoder(StatOperator):
             return
         for name in cat_names:
             if not name in self.encoders:
-                self.encoders[name] = DLLabelEncoder(name, limit_frac=0.5)
+                if self.filter_freq > 1:
+                    self.encoders[name] = DLLabelEncoder(name, limit_frac=0.5, filter_freq=self.filter_freq)
+                else:
+                    self.encoders[name] = DLLabelEncoder(name)
+
                 gdf[name].append([None])
-            self.encoders[name].fit(gdf[name])
+                self.encoders[name].fit(gdf[name])
         return
 
     def read_fin(self, *args):
         """ Finalize categorical encoders (get categories).
         """
         for name, val in self.encoders.items():
-            self.categories[name] = val.fit_finalize(self.filter_freq)
+            if self.filter_freq > 1:
+                self.categories[name] = val.fit_freq_finalize()
+            else:
+                self.categories[name] = self.cat_read_all_files(val)
         return
 
     def cat_read_all_files(self, cat_obj):
@@ -422,7 +429,7 @@ class Categorify(DFOperator):
     embed_sz = {}
     cat_names = []
 
-    def __init__(self, filter_freq=1):
+    def __init__(self, filter_freq=0):
         self.filter_freq = filter_freq
 
     @property
