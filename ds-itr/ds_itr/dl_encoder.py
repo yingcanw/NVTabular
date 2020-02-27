@@ -209,13 +209,11 @@ class DLLabelEncoder(object):
 
     def fit_freq(self, y: cudf.Series):
         self.unload_gpu_mem()
-
         y_counts = y.value_counts()
         if len(self._cats_counts) == 0:
             self._cats_counts = y_counts
         else:
             self._cats_counts = self._cats_counts.add(y_counts, fill_value=0)
-
         self.unload_gpu_mem()
         
     # Note: Add 0: None row to _cats.

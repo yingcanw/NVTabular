@@ -262,7 +262,7 @@ class Encoder(StatOperator):
         for name in cat_names:
             if not name in self.encoders:
                 if self.filter_freq > 1:
-                    self.encoders[name] = DLLabelEncoder(name, limit_frac=0.0001, filter_freq=self.filter_freq)
+                    self.encoders[name] = DLLabelEncoder(name, limit_frac=0.1, filter_freq=self.filter_freq)
                 else:
                     self.encoders[name] = DLLabelEncoder(name)
                 gdf[name].append([None])
