@@ -39,6 +39,7 @@ class DLLabelEncoder(object):
         # required because cudf.series does not compute bool type
         self._cats_counts = cudf.Series([]) 
         self._cats_counts_host = None
+        self._cats_counts_parts = []
         self._cats = cats if type(cats) == cudf.Series else cudf.Series([cats])
         self.host_mem_used = False
         self.disk_used = False
@@ -184,59 +185,53 @@ class DLLabelEncoder(object):
                 os.makedirs(self.folder_path)
 
             self.dump_cats()
-    
-    def unload_gpu_mem(self):
+
+    # Returns GPU available space and utilization
+    def get_gpu_mem_info(self):
         gpu_mem = numba.cuda.current_context().get_memory_info()
         gpu_mem_util = (gpu_mem[1] - gpu_mem[0]) / gpu_mem[1]
-        series_size_gpu = self.series_size(self._cats_counts)
+        return gpu_mem[0], gpu_mem_util
 
-        if series_size_gpu > (gpu_mem[0] * self.limit_frac) or gpu_mem_util > self.gpu_mem_util_limit:
-            if self._cats_counts_host is None:
-                self._cats_counts_host = self._cats_counts.to_pandas()
-            else:
-                self._cats_counts_host = self._cats_counts_host.add(self._cats_counts.to_pandas(), fill_value=0)
-
-            self.host_mem_used = True
-            self._cats_counts = cudf.Series([]) 
-
-            cpu_mem = psutil.virtual_memory()
-            cpu_mem_util = (cpu_mem[0] - cpu_mem[1]) / cpu_mem[0]
-            series_host_size = self.series_size(self._cats_counts_host)
-
-            if series_host_size > (cpu_mem[1] * self.limit_frac_host) or cpu_mem_util > self.cpu_mem_util_limit:
-                # self.disk_used = True
-                raise Exception('Unloading host memory to disk is not implemented!')
+    # Returns CPU available space and utilization
+    def get_cpu_mem_info(self):
+        cpu_mem = psutil.virtual_memory()
+        cpu_mem_util = (cpu_mem[0] - cpu_mem[1]) / cpu_mem[0]
+        return cpu_mem[1], cpu_mem_util
 
     def fit_freq(self, y: cudf.Series):
-        self.unload_gpu_mem()
         y_counts = y.value_counts()
-        if len(self._cats_counts) == 0:
-            self._cats_counts = y_counts
-        else:
-            self._cats_counts = self._cats_counts.add(y_counts, fill_value=0)
-        self.unload_gpu_mem()
-        
-    # Note: Add 0: None row to _cats.
+        self._cats_counts_parts.append(y_counts.to_pandas())
+
     def fit_freq_finalize(self):
-        total_cats = 0
-        if self.host_mem_used is False and self.disk_used is False:
-            self._cats = cudf.Series(self._cats_counts[self._cats_counts >= self.filter_freq].index)
+        y_counts = cudf.Series([])
+        cats_counts_host = []
+        for i in range(len(self._cats_counts_parts)):
+            y_counts_part = cudf.from_pandas(self._cats_counts_parts.pop())
+            if y_counts.shape[0] == 0:
+                y_counts = y_counts_part
+            else:
+                y_counts = y_counts.add(y_counts_part, fill_value=0)
+            series_size_gpu = self.series_size(y_counts)
+            
+            avail_gpu_mem, gpu_mem_util = self.get_gpu_mem_info()
+            if series_size_gpu > (avail_gpu_mem * self.limit_frac) or gpu_mem_util > self.gpu_mem_util_limit:
+                cats_counts_host.append(y_counts.to_pandas())
+                y_counts = cudf.Series([])
+
+        if len(cats_counts_host) == 0:
+            self._cats = cudf.Series(y_counts[y_counts >= self.filter_freq].index)
             self._cats = cudf.Series([None]).append(self._cats).reset_index(drop=True)
-            total_cats = self._cats.shape[0]
-        elif self.disk_used is False:
-            self._cats_counts_host = self._cats_counts_host.add(self._cats_counts.to_pandas(), fill_value=0)
-            self._cats_host = pd.Series(self._cats_counts_host[self._cats_counts_host >= self.filter_freq].index)
-            self._cats_host = pd.Series([None]).append(self._cats_host).reset_index(drop=True)
-            self._cats = cudf.Series()
-            total_cats = self._cats_host.shape[0]
+            return self._cats.shape[0]
         else:
-            print("Unload to files")
+            self.host_mem_used = True
+            y_counts_host = cats_counts_host.pop()
+            for i in range(len(cats_counts_host)):
+                y_counts_host_temp = cats_counts_host.pop()
+                y_counts_host = y_counts_host.add(y_counts_host_temp, fill_value=0)
 
-        #self._cats = cudf.Series()
-        self._cats_counts = cudf.Series()
-        self._cats_counts_host = None
-
-        return total_cats
+            self._cats_host = pd.Series(y_counts_host[y_counts_host >= self.filter_freq].index)
+            self._cats_host = pd.Series([None]).append(self._cats_host).reset_index(drop=True)
+            return self._cats_host.shape[0]
                 
     def merge_series(self, compr_a, compr_b):
         df, dg = cudf.DataFrame(), cudf.DataFrame()
