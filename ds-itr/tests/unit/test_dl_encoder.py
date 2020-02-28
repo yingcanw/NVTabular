@@ -20,9 +20,10 @@ def test_dl_encoder_fit_transform_fim(datasets, batch, dskey, use_filter_freq):
     if use_filter_freq:
         enc.fit_freq(df_expect["name-string"])
         enc.fit_freq_finalize()
+        new_ser = enc.transform_freq(df_expect["name-string"])
     else:
-        enc.fit(df_expect["name-string"])
-    new_ser = enc.transform(df_expect["name-string"])
+        enc.fit_unique(df_expect["name-string"])
+        new_ser = enc.transform_unique(df_expect["name-string"])
     unis = set(df_expect["name-string"])
     assert len(unis) == max(new_ser)
     for file in enc.file_paths:
