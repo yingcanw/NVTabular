@@ -99,14 +99,10 @@ class PQFileReader(GPUFileReader):
         #       strings/categoricals (parquet only stores uniques)
         self.row_size = self.row_size or 0
         if self.num_rows > 0 and self.row_size == 0:
-            for col in self.reader(self.file, nrows=min(10, self.num_rows))._columns:
-                if col.dtype.name in "object":
-                    # Use maximum of first 10 rows
-                    target = cudf.Series(col).nans_to_nulls().dropna()
-                    max_size = len(max(target)) // 2
-                    self.row_size += int(max_size)
-                else:
-                    self.row_size += col.dtype.itemsize
+            for col in self.reader(self.file, num_rows=1)._columns:
+                # removed logic for max in first x rows, it was
+                # causing infinite loops for our customers on their datasets.
+                self.row_size += col.dtype.itemsize
             self.file.seek(0)
         # Check if wwe are using row groups
         self.use_row_groups = kwargs.get("use_row_groups", None)
@@ -134,31 +130,16 @@ class PQFileReader(GPUFileReader):
                 self.row_group_batch = max(int(gpu_memory_batch / rg_size), 1)
 
     def read_file_batch(self, nskip=0, columns=None, **kwargs):
-        if self.use_row_groups:
-            row_group_batch = min(
-                self.row_group_batch, self.num_row_groups - self.next_row_group
-            )
-            chunk = cudf.DataFrame()
-            for i in range(row_group_batch):
-                add_chunk = self.reader(
-                    self.file_path,
-                    row_group=self.next_row_group,
-                    engine="cudf",
-                    columns=columns,
-                )
-                self.next_row_group += 1
-                chunk = cudf.concat([chunk, add_chunk], axis=0) if chunk else add_chunk
-                del add_chunk
-            return chunk.reset_index(drop=True)
-        else:
-            batch = min(self.batch_size, self.num_rows - nskip)
-            return self.reader(
-                self.file_path,
-                num_rows=batch,
-                skip_rows=nskip,
-                engine="cudf",
-                columns=columns,
-            )
+        # not using row groups because concat uses up double memory
+        # making iterator unable to use selected gpu memory fraction.
+        batch = min(self.batch_size, self.num_rows - nskip)
+        return self.reader(
+            self.file_path,
+            num_rows=batch,
+            skip_rows=nskip,
+            engine="cudf",
+            columns=columns,
+        ).reset_index(drop=True)
 
 
 class CSVFileReader(GPUFileReader):
@@ -251,7 +232,7 @@ class GPUFileIterator:
         batch_size=None,
         columns=None,
         use_row_groups=None,
-        dtype=None,
+        dtypes=None,
         names=None,
         row_size=None,
         **kwargs
@@ -263,11 +244,12 @@ class GPUFileIterator:
             batch_size=batch_size,
             gpu_memory_frac=gpu_memory_frac,
             use_row_groups=use_row_groups,
-            dtype=dtype,
+            dtypes=dtypes,
             names=names,
             row_size=None,
             **kwargs
         )
+        self.dtypes = dtypes
         self.columns = columns
         self.file_size = self.engine.num_rows
         self.rows_processed = 0
@@ -303,8 +285,17 @@ class GPUFileIterator:
             self.cur_chunk = self.engine.read_file_batch(
                 nskip=self.rows_processed, columns=self.columns
             )
+            if self.dtypes:
+                self.set_dtypes()
             self.count = self.count + 1
             self.rows_processed += self.cur_chunk.shape[0]
+
+    def set_dtypes(self):
+        for col, dtype in self.dtypes.items():
+            if "hex" in dtype:
+                self.cur_chunk[col] = self.cur_chunk[col]._column.nvstrings.htoi()
+            else:
+                self.cur_chunkp[col] = self.cur_chunk[col].astype(dtype)
 
 
 #
