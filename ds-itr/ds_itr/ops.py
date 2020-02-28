@@ -249,8 +249,12 @@ class Encoder(StatOperator):
     encoders = {}
     categories = {}
 
-    def __init__(self, filter_freq=0):
+    def __init__(self, filter_freq=0, limit_frac=0.5, 
+                 gpu_mem_util_limit = 0.5, gpu_mem_trans_use = 0.5):
         self.filter_freq = filter_freq
+        self.limit_frac = limit_frac
+        self.gpu_mem_util_limit = gpu_mem_util_limit
+        self.gpu_mem_trans_use = gpu_mem_trans_use
 
     def read_itr(
         self, gdf: cudf.DataFrame, cont_names: [], cat_names: [], label_name: []
@@ -263,9 +267,9 @@ class Encoder(StatOperator):
             if not name in self.encoders:
                 if self.filter_freq > 1:
                     self.encoders[name] = DLLabelEncoder(name, 
-                                                         limit_frac=0.5, 
-                                                         gpu_mem_util_limit = 0.5
-                                                         gpu_mem_trans_use = 0.5 # This one is used during transform
+                                                         limit_frac=self.limit_frac, 
+                                                         gpu_mem_util_limit = self.gpu_mem_util_limit,
+                                                         gpu_mem_trans_use = self.gpu_mem_trans_use, # This one is used during transform
                                                          filter_freq=self.filter_freq)
                 else:
                     self.encoders[name] = DLLabelEncoder(name)
@@ -433,12 +437,18 @@ class Categorify(DFOperator):
     embed_sz = {}
     cat_names = []
 
-    def __init__(self, filter_freq=0):
+    def __init__(self, filter_freq=0, limit_frac=0.5, 
+                 gpu_mem_util_limit = 0.5, gpu_mem_trans_use = 0.5):
         self.filter_freq = filter_freq
+        self.limit_frac = limit_frac
+        self.gpu_mem_util_limit = gpu_mem_util_limit
+        self.gpu_mem_trans_use = gpu_mem_trans_use
 
     @property
     def req_stats(self):
-        return [Encoder(filter_freq=self.filter_freq)]
+        return [Encoder(filter_freq=self.filter_freq, limit_frac=self.limit_frac,
+                        gpu_mem_util_limit=self.gpu_mem_util_limit,
+                        gpu_mem_trans_use=self.gpu_mem_trans_use)]
 
     def apply_op(
         self,

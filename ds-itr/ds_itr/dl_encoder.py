@@ -153,7 +153,7 @@ class DLLabelEncoder(object):
 
             sub_cats = cudf.Series([])
         else:
-            print("Unload to files")
+            raise Exception("Unload to files is not implemented!")
 
         return encoded[:].replace(-1, 0)
 
@@ -203,6 +203,38 @@ class DLLabelEncoder(object):
         self._cats_counts_parts.append(y_counts.to_pandas())
 
     def fit_freq_finalize(self):
+        self.host_mem_used = True
+        y_counts = cudf.Series([])
+        cats_counts_host = []
+        for i in range(len(self._cats_counts_parts)):
+            y_counts_part = cudf.from_pandas(self._cats_counts_parts.pop())
+            if y_counts.shape[0] == 0:
+                y_counts = y_counts_part
+            else:
+                y_counts = y_counts.add(y_counts_part, fill_value=0)
+            series_size_gpu = self.series_size(y_counts)
+            
+            avail_gpu_mem, gpu_mem_util = self.get_gpu_mem_info()
+            if series_size_gpu > (avail_gpu_mem * self.limit_frac) or gpu_mem_util > self.gpu_mem_util_limit:
+                cats_counts_host.append(y_counts.to_pandas())
+                y_counts = cudf.Series([])
+
+        if len(cats_counts_host) == 0:
+            cats = cudf.Series(y_counts[y_counts >= self.filter_freq].index)
+            cats = cudf.Series([None]).append(cats).reset_index(drop=True)
+            self._cats_host = cats.to_pandas()
+        else:
+            y_counts_host = cats_counts_host.pop()
+            for i in range(len(cats_counts_host)):
+                y_counts_host_temp = cats_counts_host.pop()
+                y_counts_host = y_counts_host.add(y_counts_host_temp, fill_value=0)
+
+            self._cats_host = pd.Series(y_counts_host[y_counts_host >= self.filter_freq].index)
+            self._cats_host = pd.Series([None]).append(self._cats_host).reset_index(drop=True)
+
+        return self._cats_host.shape[0]
+
+    def fit_freq_finalize_v2(self):
         y_counts = cudf.Series([])
         cats_counts_host = []
         for i in range(len(self._cats_counts_parts)):
