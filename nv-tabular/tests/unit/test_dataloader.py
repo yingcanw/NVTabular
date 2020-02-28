@@ -1,13 +1,13 @@
-import ds_itr.ds_iterator as ds
-import ds_itr.dl_encoder as encoder
-import ds_itr.preproc as pp
-import ds_itr.ops as ops
+import nv_tabular.preproc as pp
+import nv_tabular.ops as ops
+import nv_tabular.ds_iterator as ds
+import nv_tabular.batchloader as bl
 import cudf
 from cudf.tests.utils import assert_eq
-import ds_itr.batchloader as bl
 import pytest
 import torch
 from tests.fixtures import *
+import shutil
 
 
 @pytest.mark.parametrize("batch", [0, 100, 1000])
@@ -71,7 +71,8 @@ def test_gpu_file_iterator_dl(datasets, batch, dskey):
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
 @pytest.mark.parametrize("dump", [True, False])
-def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
+@pytest.mark.parametrize("preprocessing", [True, False])
+def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine, preprocessing):
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
 
     if engine == "parquet":
@@ -92,14 +93,14 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     cont_names = ["x", "y", "id"]
     label_name = ["label"]
 
-    processor = pp.Preprocessor(
-        cat_names=cat_names,
-        cont_names=cont_names,
-        label_name=label_name,
-        stat_ops=[ops.MinMax()],
-        df_ops=[ops.FillMissing(), ops.Normalize(), ops.Categorify()],
-        to_cpu=True,
+    processor = pp.Workflow(
+        cat_names=cat_names, cont_names=cont_names, label_name=label_name, to_cpu=True,
     )
+
+    processor.add_feature([ops.FillMissing(), ops.LogOp(preprocessing=preprocessing)])
+    processor.add_preprocess(ops.Normalize())
+    processor.add_preprocess(ops.Categorify())
+    processor.finalize()
 
     data_itr = ds.GPUDatasetIterator(
         paths,
@@ -110,19 +111,41 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     )
 
     processor.update_stats(data_itr)
+
     if dump:
         config_file = tmpdir + "/temp.yaml"
         processor.save_stats(config_file)
         processor.clear_stats()
         processor.load_stats(config_file)
 
-    # Check mean and std
-    assert math.isclose(df.x.mean(), processor.stats["means"]["x"], rel_tol=1e-4)
-    assert math.isclose(df.y.mean(), processor.stats["means"]["y"], rel_tol=1e-4)
-    assert math.isclose(df.id.mean(), processor.stats["means"]["id"], rel_tol=1e-4)
-    assert math.isclose(df.x.std(), processor.stats["stds"]["x"], rel_tol=1e-3)
-    assert math.isclose(df.y.std(), processor.stats["stds"]["y"], rel_tol=1e-3)
-    assert math.isclose(df.id.std(), processor.stats["stds"]["id"], rel_tol=1e-3)
+    def get_norms(tar: cudf.Series):
+        ser_median = tar.dropna().quantile(0.5, interpolation="linear")
+        gdf = tar.fillna(ser_median)
+        gdf = np.log(gdf + 1)
+        return gdf
+
+    # Check mean and std - No good right now we have to add all other changes; Zerofill, Log
+
+    assert math.isclose(
+        get_norms(df.x).mean(),
+        processor.stats["means"]["x_FillMissing_LogOp"],
+        rel_tol=1e-2,
+    )
+    assert math.isclose(
+        get_norms(df.y).mean(),
+        processor.stats["means"]["y_FillMissing_LogOp"],
+        rel_tol=1e-2,
+    )
+    assert math.isclose(
+        get_norms(df.x).std(),
+        processor.stats["stds"]["x_FillMissing_LogOp"],
+        rel_tol=1e-2,
+    )
+    assert math.isclose(
+        get_norms(df.y).std(),
+        processor.stats["stds"]["y_FillMissing_LogOp"],
+        rel_tol=1e-2,
+    )
 
     # Check median (TODO: Improve the accuracy)
     x_median = df.x.dropna().quantile(0.5, interpolation="linear")
@@ -131,14 +154,6 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     assert math.isclose(x_median, processor.stats["medians"]["x"], rel_tol=1e1)
     assert math.isclose(y_median, processor.stats["medians"]["y"], rel_tol=1e1)
     assert math.isclose(id_median, processor.stats["medians"]["id"], rel_tol=1e-2)
-    x_min = min(df["x"])
-    y_min = min(df["y"])
-    assert x_min == processor.stats["mins"]["x"]
-    assert y_min == processor.stats["mins"]["y"]
-    x_max = max(df["x"])
-    y_max = max(df["y"])
-    assert x_max == processor.stats["maxs"]["x"]
-    assert y_max == processor.stats["maxs"]["y"]
 
     # Check that categories match
     if engine == "parquet":
@@ -153,6 +168,17 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     processor.write_to_dataset(
         tmpdir, data_itr, nfiles=10, shuffle=True, apply_ops=True
     )
+
+    processor.create_final_cols()
+
+    # if preprocessing
+    if not preprocessing:
+        for col in cont_names:
+            assert (
+                f"{col}_FillMissing_LogOp"
+                in processor.columns_ctx["final"]["cols"]["continuous"]
+            )
+
     dlc = bl.DLCollator(preproc=processor)
     data_files = [
         bl.FileItrDataset(
@@ -164,6 +190,7 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         )
         for x in glob.glob(str(tmpdir) + "/ds_part.*.parquet")
     ]
+
     data_itr = torch.utils.data.ChainDataset(data_files)
     dl = bl.DLDataLoader(
         data_itr, collate_fn=dlc.gdf_col, pin_memory=False, num_workers=0
@@ -197,3 +224,5 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         assert data_gd[0][1].shape[1] > 0
 
     assert len_df_pp == count_tens_itr
+    if os.path.exists(processor.ds_exports):
+        shutil.rmtree(processor.ds_exports)

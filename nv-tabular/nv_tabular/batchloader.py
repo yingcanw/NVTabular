@@ -3,7 +3,7 @@ from torch import _utils
 from fastai.torch_core import to_device
 import cudf
 from torch.utils.dlpack import from_dlpack
-from ds_itr.ds_iterator import GPUFileIterator
+from nv_tabular.ds_iterator import GPUFileIterator
 
 
 class FileItrDataset(torch.utils.data.IterableDataset):
@@ -82,14 +82,12 @@ class TensorItr:
         self.tensors = [tensor[idx] for tensor in self.tensors]
 
 
-def create_tensors(
-    gdf, preproc=None, cat_names=None, cont_names=None, label_name=None, to_cpu=False
-):
+def create_tensors(gdf, preproc, cat_names, cont_names, label_name, to_cpu=False):
     # insert preprocessor
     # transform cats here
     gdf = gdf[0]
     if preproc:
-        preproc.apply_ops(gdf)
+        gdf = preproc.apply_ops(gdf)
     gdf_cats, gdf_conts, gdf_label = gdf[cat_names], gdf[cont_names], gdf[label_name]
     del gdf
     cats, conts, label = {}, {}, {}
@@ -101,7 +99,11 @@ def create_tensors(
         to_tensor(gdf_label, torch.float32, label, to_cpu=to_cpu)
     del gdf_cats, gdf_label, gdf_conts
     tar_col = cats.keys()
-    cats_list = [cats[x] for x in sorted(cats.keys())] if cats else None
+    cats_list = (
+        [cats[x] for x in sorted(cats.keys(), key=lambda entry: entry.split("_")[0])]
+        if cats
+        else None
+    )
     conts_list = [conts[x] for x in sorted(conts.keys())] if conts else None
     label_list = [label[x] for x in sorted(label.keys())] if label else None
     del cats, conts, label
@@ -143,21 +145,34 @@ class DLCollator:
         self.transform = transform
         self.preproc = preproc
         if self.preproc:
-            self.cat_names = self.preproc.cat_names
-            self.cont_names = self.preproc.cont_names
-            self.label_name = self.preproc.label_name
+            cat_names_key = self.preproc.columns_ctx["final"]["ctx"]["categorical"]
+            cont_names_key = self.preproc.columns_ctx["final"]["ctx"]["continuous"]
+            label_name_key = self.preproc.columns_ctx["final"]["ctx"]["label"]
+            for key in cat_names_key:
+                self.cat_names = (
+                    self.cat_names + self.preproc.columns_ctx["categorical"][key]
+                )
+            for key in cont_names_key:
+                self.cont_names = (
+                    self.cont_names + self.preproc.columns_ctx["continuous"][key]
+                )
+            for key in label_name_key:
+                if key in "label":
+                    key = "base"
+                self.label_name = (
+                    self.label_name + self.preproc.columns_ctx["label"][key]
+                )
+            self.cat_names = sorted(list(set(self.cat_names)))
+            self.cont_names = sorted(list(set(self.cont_names)))
+            self.label_name = sorted(list(set(self.label_name)))
         else:
-            self.cat_names = cat_names
-            self.cont_names = cont_names
-            self.label_name = label_name
+            self.cat_names = sorted(cat_names) if cat_names else []
+            self.cont_names = sorted(cont_names) if cont_names else []
+            self.label_name = sorted(label_name) if label_name else []
 
     def gdf_col(self, gdf):
         batch = self.transform(
-            gdf,
-            preproc=self.preproc,
-            cat_names=self.cat_names,
-            cont_names=self.cont_names,
-            label_name=self.label_name,
+            gdf, self.preproc, self.cat_names, self.cont_names, self.label_name,
         )
         return (batch[0], batch[1]), batch[2].long()
 
