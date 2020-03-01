@@ -180,12 +180,10 @@ class CSVFileReader(GPUFileReader):
             sep=sep,
         )
         if self.num_rows > 0:
-            for i, col in enumerate(snippet.columns):
-                if names:
-                    name = names[i]
-                else:
-                    name = col
-                self.names.append(name)
+            if not type(names) is type(None):
+                self.names=names
+            else:
+                self.names=snippet.columns
             for i, col in enumerate(snippet._columns):
                 if estimate_row_size:
                     if col.dtype == "object":

@@ -6,6 +6,7 @@ import cudf
 from nv_tabular.ds_iterator import GPUDatasetIterator
 from nv_tabular.dl_encoder import DLLabelEncoder
 from nv_tabular.ds_writer import DatasetWriter
+from nv_tabular.batchloader import create_tensors
 from nv_tabular.ops import *
 
 try:
@@ -426,6 +427,12 @@ class Workflow:
                 final["label"] = col_ctx
             else:
                 final["label"] = final["label"] + col_ctx
+        # if no operators run in preprocessing we grab base columns
+        if not 'continuous' in final:
+            # set base columns
+            final['continuous'] = self.columns_ctx['continuous']['base']
+        if not 'categorical' in final:
+            final['categorical'] = self.columns_ctx['categorical']['base']
         self.columns_ctx["final"] = {}
         self.columns_ctx["final"]["ctx"] = final
 
@@ -539,14 +546,7 @@ class Workflow:
             # set parameters for export necessary,
             # running only stats ops
             # not running stat_ops < --- may not be necessary may mean running apply_ops
-            new_path = self.exec_phase(itr, idx)
-            if new_path:
-                new_files = [
-                    os.path.join(new_path, x)
-                    for x in os.listdir(new_path)
-                    if x.endswith("parquet")
-                ]
-                itr = GPUDatasetIterator(new_files, engine="parquet")
+            self.exec_phase(itr, idx)
 
     def run_ops_for_phase(self, gdf, tasks, record_stats=True):
         run_stat_ops = []
@@ -572,13 +572,20 @@ class Workflow:
 
     # run phase
     def exec_phase(self, itr, phase_index):
-        """ Gather necessary column statistics in single pass.
+        """ 
+        Gather necessary column statistics in single pass. 
+        Execute one phase only, given by phase index
         """
+        stat_ops_ran=[]
         for gdf in itr:
-            # put the FE tasks here roll through them
+            # run all previous phases to get df to correct state
             for i in range(phase_index):
-                gdf, _ = self.run_ops_for_phase(gdf, self.phases[i], record_stats=False)
-            gdf, stat_ops_ran = self.run_ops_for_phase(gdf, self.phases[phase_index])
+                gdf, _ = self.run_ops_for_phase(
+                    gdf, self.phases[i], record_stats=False
+                )
+            gdf, stat_ops_ran = self.run_ops_for_phase(
+                gdf, self.phases[phase_index], record_stats=True
+            )
         #                 pdb.set_trace()
         # if export is activated combine as many GDFs as possible and
         # then write them out cudf.concat([exp_gdf, gdf], axis=0)
@@ -587,6 +594,26 @@ class Workflow:
             # missing bubble up to prerprocessor
         self.get_stats()
 
+
+    def apply_ops(self, gdf, start_phase=None, end_phase=None, record_stats=False):
+        """
+        gdf: cudf dataframe
+        record_stats: bool; run stats recording within run
+        Controls the application of registered preprocessing phase op
+        tasks, can only be used after apply has been performed
+        """
+        # put phases that you want to run represented in a slice
+        # dont run stat_ops in apply
+        # run the PP ops
+        start = start_phase if start_phase else 0
+        end = end_phase if end_phase else len(self.phases)
+        for phase_index in range(start, end):
+            gdf, stat_ops_ran = self.run_ops_for_phase(
+                gdf, self.phases[phase_index], record_stats=record_stats
+            )
+        return gdf
+        
+        
     def get_stats(self):
         for name, stat_op in self.stat_ops.items():
             stat_vals = stat_op.stats_collected()
@@ -634,28 +661,6 @@ class Workflow:
             )
         self.reg_all_ops(self.master_task_list)
 
-    def apply_ops(self, gdf, start_phase=None, end_phase=None, record_stats=False):
-        """
-        gdf: cudf dataframe
-        record_stats: bool; run stats recording within run
-        Controls the application of registered preprocessing phase op
-        tasks
-        """
-        # put phases that you want to run represented in a slice
-        # dont run stat_ops in apply
-        # run the PP ops
-        start = start_phase if start_phase else 0
-        end = end_phase if end_phase else len(self.phases)
-        for phase_index in range(start, end):
-            for i in range(phase_index):
-                gdf, _ = self.run_ops_for_phase(
-                    gdf, self.phases[i], record_stats=record_stats
-                )
-            gdf, _ = self.run_ops_for_phase(
-                gdf, self.phases[phase_index], record_stats=record_stats
-            )
-        return gdf
-
     def clear_stats(self):
 
         for stat, vals in self.stats.items():
@@ -665,62 +670,4 @@ class Workflow:
             stat_op.clear()
 
     def ds_to_tensors(self, itr, apply_ops=True):
-        import torch
-        from torch.utils.dlpack import from_dlpack
-
-        def _to_tensor(gdf: cudf.DataFrame, dtype, tensor_list, to_cpu=False):
-            if gdf.empty:
-                return
-            for column in gdf.columns:
-                gdf_col = gdf[column]
-                g = gdf_col.to_dlpack()
-                t = from_dlpack(g).type(dtype)
-                t = t.to(torch.device("cpu")) if to_cpu else t
-                tensor_list[column] = (
-                    t
-                    if column not in tensor_list
-                    else torch.cat([tensor_list[column], t])
-                )
-                del g
-
-        cats, conts, label = {}, {}, {}
-        cat_names = sorted(
-            self.columns_ctx["final"]["cols"]["categorical"],
-            key=lambda entry: entry.split("_")[0],
-        )
-        cont_names = sorted(self.columns_ctx["final"]["cols"]["continuous"])
-        label_name = sorted(self.columns_ctx["final"]["cols"]["label"])
-        for gdf in itr:
-            if apply_ops:
-                gdf = self.apply_ops(gdf)
-
-            gdf_cats, gdf_conts, gdf_label = (
-                gdf[cat_names],
-                gdf[cont_names],
-                gdf[label_name],
-            )
-            del gdf
-
-            if len(gdf_cats) > 0:
-                _to_tensor(gdf_cats, torch.long, cats, to_cpu=self.to_cpu)
-            if len(gdf_conts) > 0:
-                _to_tensor(gdf_conts, torch.float32, conts, to_cpu=self.to_cpu)
-            if len(gdf_label) > 0:
-                _to_tensor(gdf_label, torch.float32, label, to_cpu=self.to_cpu)
-
-        cats_list = (
-            [
-                cats[x]
-                for x in sorted(cats.keys(), key=lambda entry: entry.split("_")[0])
-            ]
-            if cats
-            else None
-        )
-        conts_list = [conts[x] for x in sorted(conts.keys())] if conts else None
-        label_list = [label[x] for x in sorted(label.keys())] if label else None
-
-        # Change cats, conts to dim=1 for column dim=0 for df sub section
-        cats = torch.stack(cats_list, dim=1) if len(cats_list) > 0 else None
-        conts = torch.stack(conts_list, dim=1) if len(conts_list) > 0 else None
-        label = torch.cat(label_list, dim=0) if len(label_list) > 0 else None
-        return cats, conts, label
+        return create_tensors(self, itr=itr)

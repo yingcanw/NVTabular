@@ -40,6 +40,11 @@ def test_gpu_file_iterator_dl(datasets, batch, dskey):
     df_expect = cudf.read_csv(paths[0], header=False, names=names)[mycols_csv]
     df_expect["id"] = df_expect["id"].astype("int64")
     df_itr = cudf.DataFrame()
+    
+    processor = pp.Workflow(
+        cat_names=["name-string"], cont_names=["x", "y", "id"], label_name=["label"], to_cpu=True,
+    )
+    
     data_itr = bl.FileItrDataset(
         paths[0],
         engine="csv",
@@ -48,9 +53,10 @@ def test_gpu_file_iterator_dl(datasets, batch, dskey):
         columns=mycols_csv,
         names=names,
     )
+    
     data_chain = torch.utils.data.ChainDataset([data_itr])
     dlc = bl.DLCollator(
-        cat_names=["name-string"], cont_names=["x", "y", "id"], label_name=["label"]
+        processor
     )
     data_dl = bl.DLDataLoader(
         data_itr, collate_fn=dlc.gdf_col, pin_memory=False, num_workers=0
