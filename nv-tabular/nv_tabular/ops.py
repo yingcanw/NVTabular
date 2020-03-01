@@ -342,9 +342,10 @@ class Encoder(StatOperator):
     encoders = {}
     categories = {}
 
-    def __init__(self, filter_freq=0, limit_frac=0.5, 
+    def __init__(self, use_frequency=False, freq_threshold=0, limit_frac=0.5, 
                  gpu_mem_util_limit = 0.5, gpu_mem_trans_use = 0.5):
-        self.filter_freq = filter_freq
+        self.use_frequency = use_frequency
+        self.freq_threshold = freq_threshold
         self.limit_frac = limit_frac
         self.gpu_mem_util_limit = gpu_mem_util_limit
         self.gpu_mem_trans_use = gpu_mem_trans_use
@@ -359,12 +360,13 @@ class Encoder(StatOperator):
             return
         for name in cols:
             if not name in self.encoders:
-                if self.filter_freq > 1:
+                if self.use_frequency:
                     self.encoders[name] = DLLabelEncoder(name, 
+                                                         use_frequency=self.use_frequency,
                                                          limit_frac=self.limit_frac, 
                                                          gpu_mem_util_limit = self.gpu_mem_util_limit,
                                                          gpu_mem_trans_use = self.gpu_mem_trans_use, # This one is used during transform
-                                                         filter_freq=self.filter_freq)
+                                                         freq_threshold=self.freq_threshold)
                 else:
                     self.encoders[name] = DLLabelEncoder(name)
                 gdf[name].append([None])
@@ -376,7 +378,7 @@ class Encoder(StatOperator):
         """ Finalize categorical encoders (get categories).
         """
         for name, val in self.encoders.items():
-            if self.filter_freq > 1:
+            if self.use_frequency:
                 self.categories[name] = val.fit_freq_finalize()
             else:
                 self.categories[name] = self.cat_read_all_files(val)
@@ -545,17 +547,18 @@ class Categorify(DFOperator):
     default_in = CAT
     default_out = CAT
 
-    def __init__(self, filter_freq=0, limit_frac=0.5, 
-                 gpu_mem_util_limit = 0.5, gpu_mem_trans_use = 0.5):
-        self.filter_freq = filter_freq
+    def __init__(self, use_frequency=False, freq_threshold=0, limit_frac=0.5, 
+                 gpu_mem_util_limit=0.5, gpu_mem_trans_use=0.5):
+        self.use_frequency = use_frequency
+        self.freq_threshold = freq_threshold
         self.limit_frac = limit_frac
         self.gpu_mem_util_limit = gpu_mem_util_limit
         self.gpu_mem_trans_use = gpu_mem_trans_use
 
     @property
     def req_stats(self):
-        return [Encoder(filter_freq=self.filter_freq, limit_frac=self.limit_frac,
-                        gpu_mem_util_limit=self.gpu_mem_util_limit,
+        return [Encoder(use_frequency=self.use_frequency, freq_threshold=self.freq_threshold, 
+                        limit_frac=self.limit_frac, gpu_mem_util_limit=self.gpu_mem_util_limit,
                         gpu_mem_trans_use=self.gpu_mem_trans_use)]
 
     def op_logic(self, gdf: cudf.DataFrame, target_columns: list, stats_context=None):
