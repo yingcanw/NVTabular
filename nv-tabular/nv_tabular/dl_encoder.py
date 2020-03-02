@@ -34,9 +34,8 @@ def _enforce_npint32(y: cudf.Series) -> cudf.Series:
 
 class DLLabelEncoder(object):
     def __init__(self, col, cats=None, path=None, use_frequency=False,
-                 freq_threshold=0, limit_frac=0.1, limit_frac_host=0.8,
-                 gpu_mem_util_limit = 0.8, cpu_mem_util_limit = 0.8, 
-                 gpu_mem_trans_use = 0.8, file_paths=None):
+                 freq_threshold=0, limit_frac=0.1, gpu_mem_util_limit = 0.8, 
+                 cpu_mem_util_limit = 0.8, gpu_mem_trans_use = 0.8, file_paths=None):
 
         # required because cudf.series does not compute bool type
         self._cats_counts = cudf.Series([]) 
@@ -59,11 +58,9 @@ class DLLabelEncoder(object):
         self.use_frequency = use_frequency
         self.freq_threshold = freq_threshold
         self.limit_frac = limit_frac
-        self.limit_frac_host = limit_frac_host
         self.gpu_mem_util_limit = gpu_mem_util_limit
         self.cpu_mem_util_limit = cpu_mem_util_limit
         self.gpu_mem_trans_use = gpu_mem_trans_use
-        self.sub_cats_size = 50000       
         self.cat_exp_count = 0
 
     def label_encoding(self, vals, cats, dtype=None, na_sentinel=-1):
@@ -154,16 +151,16 @@ class DLLabelEncoder(object):
 
     def transform_freq(self, y: cudf.Series) -> cudf.Series:
         avail_gpu_mem = numba.cuda.current_context().get_memory_info()[0]
-        self.sub_cats_size = int(avail_gpu_mem * self.gpu_mem_trans_use / self._cats_host.dtype.itemsize)
+        sub_cats_size = int(avail_gpu_mem * self.gpu_mem_trans_use / self._cats_host.dtype.itemsize)
         i = 0
         encoded = None
         while i < len(self._cats_host):
-            sub_cats = cudf.Series(self._cats_host[i:i+self.sub_cats_size])
+            sub_cats = cudf.Series(self._cats_host[i:i+sub_cats_size])
             if encoded is None:
                 encoded = self.label_encoding(y, sub_cats, na_sentinel=0)
             else:
                 encoded = encoded.add(self.label_encoding(y, sub_cats, na_sentinel=0), fill_value=0)
-            i = i + self.sub_cats_size
+            i = i + sub_cats_size
 
         sub_cats = cudf.Series([])
         return encoded[:].replace(-1, 0)
