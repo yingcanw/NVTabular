@@ -9,15 +9,15 @@ import os
 
 @pytest.mark.parametrize("batch", [0, 100, 1000])
 @pytest.mark.parametrize("dskey", ["csv", "csv-no-header"])
-@pytest.mark.parametrize("use_filter_freq", [True, False])
-def test_dl_encoder_fit_transform_fim(datasets, batch, dskey, use_filter_freq):
+@pytest.mark.parametrize("use_frequency", [True, False])
+def test_dl_encoder_fit_transform_fim(datasets, batch, dskey, use_frequency):
     paths = glob.glob(str(datasets[dskey]) + "/*.csv")
     names = allcols_csv if dskey == "csv-no-header" else None
     df_expect = cudf.read_csv(paths[0], header=False, names=names)[mycols_csv]
     df_expect["id"] = df_expect["id"].astype("int64")
     # create file iterator to go through the
     enc = encoder.DLLabelEncoder("name-string")
-    if use_filter_freq:
+    if use_frequency:
         enc.fit_freq(df_expect["name-string"])
         enc.fit_freq_finalize()
         new_ser = enc.transform_freq(df_expect["name-string"])
@@ -32,7 +32,8 @@ def test_dl_encoder_fit_transform_fim(datasets, batch, dskey, use_filter_freq):
 
 @pytest.mark.parametrize("batch", [0, 100, 1000])
 @pytest.mark.parametrize("dskey", ["csv", "csv-no-header"])
-def test_dl_encoder_fit_transform_ltm(datasets, batch, dskey):
+@pytest.mark.parametrize("use_frequency", [True, False])
+def test_dl_encoder_fit_transform_ltm(datasets, batch, dskey, use_frequency):
     paths = glob.glob(str(datasets[dskey]) + "/*.csv")
     names = allcols_csv if dskey == "csv-no-header" else None
     df_expect = cudf.read_csv(paths[0], header=False, names=names)[mycols_csv]
@@ -41,10 +42,13 @@ def test_dl_encoder_fit_transform_ltm(datasets, batch, dskey):
         paths[0], batch_size=batch, gpu_memory_frac=2e-8, names=names
     )
     enc = encoder.DLLabelEncoder(
-        "name-string", path=str(datasets["cats"]), limit_frac=1e-10
+        "name-string", path=str(datasets["cats"]), limit_frac=1e-10, use_frequency=use_frequency
     )
     for chunk in data_itr:
         enc.fit(chunk["name-string"])
+  
+    if use_frequency:
+        enc.fit_freq_finalize()
     new_ser = enc.transform(df_expect["name-string"])
     unis = df_expect["name-string"].unique().values_to_string()
     # set does not pick up None values so must be added if found in
