@@ -354,8 +354,7 @@ class Encoder(StatOperator):
         self.limit_frac = limit_frac
         self.gpu_mem_util_limit = gpu_mem_util_limit
         self.gpu_mem_trans_use = gpu_mem_trans_use
-        print("column:", self.columns)
-
+        
     def apply_op(
         self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base"
     ):
