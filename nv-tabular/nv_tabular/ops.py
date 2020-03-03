@@ -136,6 +136,9 @@ class DFOperator(TransformOperator):
 
 
 class StatOperator(Operator):
+    def __init__(self, columns=None):
+        super(StatOperator, self).__init__(columns)
+
     def read_itr(
         self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base"
     ):
@@ -343,12 +346,15 @@ class Encoder(StatOperator):
     categories = {}
 
     def __init__(self, use_frequency=False, freq_threshold=0, limit_frac=0.5, 
-                 gpu_mem_util_limit = 0.5, gpu_mem_trans_use = 0.5):
+                 gpu_mem_util_limit = 0.5, gpu_mem_trans_use = 0.5, columns=None):
+
+        super(Encoder, self).__init__(columns)
         self.use_frequency = use_frequency
         self.freq_threshold = freq_threshold
         self.limit_frac = limit_frac
         self.gpu_mem_util_limit = gpu_mem_util_limit
         self.gpu_mem_trans_use = gpu_mem_trans_use
+        print("column:", self.columns)
 
     def apply_op(
         self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base"
