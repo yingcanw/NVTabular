@@ -136,6 +136,9 @@ class DFOperator(TransformOperator):
 
 
 class StatOperator(Operator):
+    def __init__(self, columns=None):
+        super(StatOperator, self).__init__(columns)
+
     def read_itr(
         self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base"
     ):
@@ -342,6 +345,16 @@ class Encoder(StatOperator):
     encoders = {}
     categories = {}
 
+    def __init__(self, use_frequency=False, freq_threshold=0, limit_frac=0.5, 
+                 gpu_mem_util_limit = 0.5, gpu_mem_trans_use = 0.5, columns=None):
+
+        super(Encoder, self).__init__(columns)
+        self.use_frequency = use_frequency
+        self.freq_threshold = freq_threshold
+        self.limit_frac = limit_frac
+        self.gpu_mem_util_limit = gpu_mem_util_limit
+        self.gpu_mem_trans_use = gpu_mem_trans_use
+        
     def apply_op(
         self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base"
     ):
@@ -352,8 +365,17 @@ class Encoder(StatOperator):
             return
         for name in cols:
             if not name in self.encoders:
-                self.encoders[name] = DLLabelEncoder(name)
+                if self.use_frequency:
+                    self.encoders[name] = DLLabelEncoder(name, 
+                                                         use_frequency=self.use_frequency,
+                                                         limit_frac=self.limit_frac, 
+                                                         gpu_mem_util_limit = self.gpu_mem_util_limit,
+                                                         gpu_mem_trans_use = self.gpu_mem_trans_use, # This one is used during transform
+                                                         freq_threshold=self.freq_threshold)
+                else:
+                    self.encoders[name] = DLLabelEncoder(name)
                 gdf[name].append([None])
+
             self.encoders[name].fit(gdf[name])
         return
 
@@ -361,7 +383,10 @@ class Encoder(StatOperator):
         """ Finalize categorical encoders (get categories).
         """
         for name, val in self.encoders.items():
-            self.categories[name] = self.cat_read_all_files(val)
+            if self.use_frequency:
+                self.categories[name] = val.fit_freq_finalize()
+            else:
+                self.categories[name] = self.cat_read_all_files(val)
         return
 
     def cat_read_all_files(self, cat_obj):
@@ -527,9 +552,19 @@ class Categorify(DFOperator):
     default_in = CAT
     default_out = CAT
 
+    def __init__(self, use_frequency=False, freq_threshold=0, limit_frac=0.5, 
+                 gpu_mem_util_limit=0.5, gpu_mem_trans_use=0.5):
+        self.use_frequency = use_frequency
+        self.freq_threshold = freq_threshold
+        self.limit_frac = limit_frac
+        self.gpu_mem_util_limit = gpu_mem_util_limit
+        self.gpu_mem_trans_use = gpu_mem_trans_use
+
     @property
     def req_stats(self):
-        return [Encoder()]
+        return [Encoder(use_frequency=self.use_frequency, freq_threshold=self.freq_threshold, 
+                        limit_frac=self.limit_frac, gpu_mem_util_limit=self.gpu_mem_util_limit,
+                        gpu_mem_trans_use=self.gpu_mem_trans_use)]
 
     def op_logic(self, gdf: cudf.DataFrame, target_columns: list, stats_context=None):
         cat_names = target_columns
