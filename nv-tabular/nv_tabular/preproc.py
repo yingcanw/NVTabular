@@ -3,7 +3,7 @@ import warnings
 
 import numpy as np
 import cudf
-from nv_tabular.ds_iterator import GPUDatasetIterator
+from nv_tabular.ds_iterator import GPUDatasetIterator, Shuffler
 from nv_tabular.dl_encoder import DLLabelEncoder
 from nv_tabular.ds_writer import DatasetWriter
 from nv_tabular.batchloader import create_tensors
@@ -475,13 +475,6 @@ class Workflow:
                     # get op from op_id
                     # operators need to be instantiated with state information
                     target_op = all_ops[op_id](**self.ops_args[op_id])
-                    if not target_op:
-                        warnings.warn(
-                            f"""Did not find corresponding op for id: {op_id}. 
-                                      If this is a custom operator, check it was properyl
-                                      loaded."""
-                        )
-                        break
                     if dep_set:
                         for dep_grp in dep_set:
                             # handle required stats of target op on
@@ -537,17 +530,6 @@ class Workflow:
                 return True
         return False
 
-    def update_stats(self, itr, end_phase=None):
-        # if no tasks have been loaded then we need to load internal config
-        if not self.phases:
-            self.finalize()
-        end = end_phase if end_phase else len(self.phases)
-        for idx, _ in enumerate(self.phases[:end]):
-            # set parameters for export necessary,
-            # running only stats ops
-            # not running stat_ops < --- may not be necessary may mean running apply_ops
-            self.exec_phase(itr, idx)
-
     def run_ops_for_phase(self, gdf, tasks, record_stats=True):
         run_stat_ops = []
         for task in tasks:
@@ -571,7 +553,7 @@ class Workflow:
         return gdf, run_stat_ops
 
     # run phase
-    def exec_phase(self, itr, phase_index):
+    def exec_phase(self, itr, phase_index, export_path=None, record_stats=True):
         """ 
         Gather necessary column statistics in single pass. 
         Execute one phase only, given by phase index
@@ -584,8 +566,10 @@ class Workflow:
                     gdf, self.phases[i], record_stats=False
                 )
             gdf, stat_ops_ran = self.run_ops_for_phase(
-                gdf, self.phases[phase_index], record_stats=True
+                gdf, self.phases[phase_index], record_stats=record_stats
             )
+            if export_path:
+                gdf.to_parquet(export_path)
         #                 pdb.set_trace()
         # if export is activated combine as many GDFs as possible and
         # then write them out cudf.concat([exp_gdf, gdf], axis=0)
@@ -595,7 +579,29 @@ class Workflow:
         self.get_stats()
 
 
-    def apply_ops(self, gdf, start_phase=None, end_phase=None, record_stats=False):
+    def apply(self, dataset, apply_offline=True, record_stats=True, shuffle=False, output_path='./ds_export'):
+        # if no tasks have been loaded then we need to load internal config
+        if not self.phases:
+            self.finalize()
+        if apply_offline:
+            self.update_stats(dataset, output_path=output_path, record_stats=record_stats)
+        else:
+            self.apply_ops(dataset, output_path=output_path, record_stats=record_stats)
+        if shuffle:
+            # assumes we are using parquet always with in the preprocessor
+            files_in = os.listdir(output_path)
+            Shuffler().shuffle(output_path, output_path, len(files_in) // 10)
+    
+    
+    def update_stats(self, itr, end_phase=None, output_path=None, record_stats=True):
+        end = end_phase if end_phase else len(self.phases)
+        for idx, _ in enumerate(self.phases[:end]):
+            if idx == len(self.phases) - 1 and output_path:
+                self.exec_phase(itr, idx, export_path=output_path, record_stats=record_stats)
+            self.exec_phase(itr, idx)
+
+
+    def apply_ops(self, gdf, start_phase=None, end_phase=None, record_stats=False, output_path=None):
         """
         gdf: cudf dataframe
         record_stats: bool; run stats recording within run
@@ -611,6 +617,8 @@ class Workflow:
             gdf, stat_ops_ran = self.run_ops_for_phase(
                 gdf, self.phases[phase_index], record_stats=record_stats
             )
+            if phase_index == len(self.phases) - 1 and output_path:
+                gdf.to_parquet(output_path)
         return gdf
         
         
