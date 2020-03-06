@@ -40,7 +40,7 @@ class DLLabelEncoder(object):
         # required because cudf.series does not compute bool type
         self._cats_counts = cudf.Series([]) 
         self._cats_counts_host = None
-        self._cats_counts_parts = []
+        self._cats_parts = []
         self._cats = cats if type(cats) == cudf.Series else cudf.Series([cats])
         # writer needs to be mapped to same file in folder.
         self.path = path or os.path.join(os.getcwd(), "label_encoders")
@@ -78,80 +78,8 @@ class DLLabelEncoder(object):
         return codes._copy_construct(name=None, index=vals.index)
 
     def transform(self, y: cudf.Series, unk_idx=0) -> cudf.Series:
-        if self.use_frequency:
-            return self.transform_freq(y)
-        else:
-            return self.transform_unique(y, unk_idx)
-
-    def transform_unique(self, y: cudf.Series, unk_idx=0) -> cudf.Series:
-        """
-        Transform an input into its categorical keys.
-        This is intended for use with small inputs relative to the size of the
-        dataset. For fitting and transforming an entire dataset, prefer
-        `fit_transform`.
-        Parameters
-        ----------
-        y : cudf.Series
-            Input keys to be transformed. Its values should match the
-            categories given to `fit`
-        Returns
-        ------
-        encoded : cudf.Series
-            The ordinally encoded input series
-        Raises
-        ------
-        KeyError
-            if a category appears that was not seen in `fit`
-        """
-        # Need to watch out for None calls now
-        y = _enforce_str(y).reset_index(drop=True)
-        encoded = None
-        if os.path.exists(self.folder_path) and self.file_paths:
-            # some cats in memory some in disk
-            file_paths = [
-                os.path.join(self.folder_path, x)
-                for x in os.listdir(self.folder_path)
-                if x.endswith("parquet")
-                and x not in self.file_paths
-                and x not in self.ignore_files
-            ]
-            self.file_paths.extend(file_paths)
-            self.file_paths = list(set(self.file_paths))
-            if self.file_paths:
-                chunks = ds_itr.GPUDatasetIterator(self.file_paths)
-                encoded = cudf.Series()
-                rec_count = 0
-                # chunks represents a UNIQUE set of categorical representations
-                for chunk in chunks:
-                    # must reconstruct encoded series from multiple parts
-                    # zero out unknowns using na_sentinel
-                    none_prep = cudf.Series([None])
-                    chunk = (
-                        none_prep.append(chunk[self.col])
-                        .reset_index(drop=True)
-                        .unique()
-                    )
-                    part_encoded = cudf.Series(y.label_encoding(chunk, na_sentinel=0))
-                    # added ref count to all values over zero in series
-                    part_encoded = (
-                        part_encoded + (part_encoded > 0).astype("int") * rec_count
-                    )
-                    # continually add chunks to encoded to get full batch
-                    encoded = (
-                        part_encoded if encoded.empty else encoded.add(part_encoded)
-                    )
-
-                    # subtract none addition to count
-                    rec_count = rec_count + len(chunk) - 1
-
-        else:
-            # all cats in memory
-            encoded = cudf.Series(y.label_encoding(self._cats, na_sentinel=0))
-        return encoded[:].replace(-1, 0)
-
-    def transform_freq(self, y: cudf.Series) -> cudf.Series:
         avail_gpu_mem = numba.cuda.current_context().get_memory_info()[0]
-        sub_cats_size = int(avail_gpu_mem * self.gpu_mem_trans_use / self._cats_host.dtype.itemsize)
+        sub_cats_size = int(avail_gpu_mem * self.gpu_mem_trans_use / self.series_size(self._cats_host))
         i = 0
         encoded = None
         while i < len(self._cats_host):
@@ -171,30 +99,6 @@ class DLLabelEncoder(object):
         else:
             return s.dtype.itemsize * len(s)
 
-    def fit(self, y: cudf.Series):
-        if self.use_frequency:
-            self.fit_freq(y)
-        else:
-            self.fit_unique(y)
-
-    def fit_unique(self, y: cudf.Series):
-        y = _enforce_str(y).reset_index(drop=True)
-        if self._cats.empty:
-            self._cats = self.one_cycle(y).unique()
-        else:
-            self._cats = self._cats.append(self.one_cycle(y)).unique()
-        # check if enough space to leave in gpu memory if category doubles in size
-
-        if (
-            self.series_size(self._cats)
-            > (numba.cuda.current_context().get_memory_info()[0] * self.limit_frac)
-            and not self._cats.empty
-        ):
-            # first time dumping into file
-            if not os.path.exists(self.folder_path):
-                os.makedirs(self.folder_path)
-            self.dump_cats()
-
     # Returns GPU available space and utilization
     def get_gpu_mem_info(self):
         gpu_mem = numba.cuda.current_context().get_memory_info()
@@ -207,15 +111,63 @@ class DLLabelEncoder(object):
         cpu_mem_util = (cpu_mem[0] - cpu_mem[1]) / cpu_mem[0]
         return cpu_mem[1], cpu_mem_util
 
+    def fit(self, y: cudf.Series):
+        if self.use_frequency:
+            self.fit_freq(y)
+        else:
+            self.fit_unique(y)
+
+    def fit_finalize(self):
+        if self.use_frequency:
+            return self.fit_freq_finalize()
+        else:
+            return self.fit_unique_finalize()
+
+    def fit_unique(self, y: cudf.Series):
+        y_uniqs = y.unique().reset_index(drop=True)
+        self._cats_parts.append(y_uniqs.to_pandas())
+
+    def fit_unique_finalize(self):
+        y_uniqs = cudf.Series([])
+        cats_uniqs_host = []
+        for i in range(len(self._cats_parts)):
+            y_uniqs_part = cudf.from_pandas(self._cats_parts.pop())
+            if y_uniqs.shape[0] == 0:
+                y_uniqs = y_uniqs_part
+            else:
+                y_uniqs = y_uniqs.append(y_uniqs_part).unique() # Check merge option as well
+            series_size_gpu = self.series_size(y_uniqs)
+            
+            avail_gpu_mem, gpu_mem_util = self.get_gpu_mem_info()
+            if series_size_gpu > (avail_gpu_mem * self.limit_frac) or gpu_mem_util > self.gpu_mem_util_limit:
+                cats_uniqs_host.append(y_uniqs.to_pandas())
+                y_uniqs = cudf.Series([])
+
+        if len(cats_uniqs_host) == 0:
+            cats = cudf.Series([None]).append(y_uniqs).reset_index(drop=True)
+            self._cats_host = cats.to_pandas()
+        else:
+            y_uniqs_host = pd.DataFrame(cats_uniqs_host.pop())
+            
+            for i in range(len(cats_uniqs_host)):
+                y_uniqs_host_temp = pd.DataFrame(cats_uniqs_host.pop())
+                y_uniqs_host = y_uniqs_host.append(y_uniqs_host_temp)
+                y_uniqs_host = y_uniqs_host.iloc[:,0].unique()
+
+            self._cats_host = y_uniqs_host
+            
+
+        return self._cats_host.shape[0]
+
     def fit_freq(self, y: cudf.Series):
         y_counts = y.value_counts()
-        self._cats_counts_parts.append(y_counts.to_pandas())
+        self._cats_parts.append(y_counts.to_pandas())
 
     def fit_freq_finalize(self):
         y_counts = cudf.Series([])
         cats_counts_host = []
-        for i in range(len(self._cats_counts_parts)):
-            y_counts_part = cudf.from_pandas(self._cats_counts_parts.pop())
+        for i in range(len(self._cats_parts)):
+            y_counts_part = cudf.from_pandas(self._cats_parts.pop())
             if y_counts.shape[0] == 0:
                 y_counts = y_counts_part
             else:

@@ -365,15 +365,13 @@ class Encoder(StatOperator):
             return
         for name in cols:
             if not name in self.encoders:
-                if self.use_frequency:
-                    self.encoders[name] = DLLabelEncoder(name, 
-                                                         use_frequency=self.use_frequency,
-                                                         limit_frac=self.limit_frac, 
-                                                         gpu_mem_util_limit = self.gpu_mem_util_limit,
-                                                         gpu_mem_trans_use = self.gpu_mem_trans_use, # This one is used during transform
-                                                         freq_threshold=self.freq_threshold)
-                else:
-                    self.encoders[name] = DLLabelEncoder(name)
+                self.encoders[name] = DLLabelEncoder(name, 
+                                                     use_frequency=self.use_frequency,
+                                                     limit_frac=self.limit_frac, 
+                                                     gpu_mem_util_limit = self.gpu_mem_util_limit,
+                                                     gpu_mem_trans_use = self.gpu_mem_trans_use, # This one is used during transform
+                                                     freq_threshold=self.freq_threshold)
+
                 gdf[name].append([None])
 
             self.encoders[name].fit(gdf[name])
@@ -383,10 +381,7 @@ class Encoder(StatOperator):
         """ Finalize categorical encoders (get categories).
         """
         for name, val in self.encoders.items():
-            if self.use_frequency:
-                self.categories[name] = val.fit_freq_finalize()
-            else:
-                self.categories[name] = self.cat_read_all_files(val)
+            self.categories[name] = val.fit_finalize()
         return
 
     def cat_read_all_files(self, cat_obj):
