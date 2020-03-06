@@ -40,6 +40,7 @@ class DLLabelEncoder(object):
         # required because cudf.series does not compute bool type
         self._cats_counts = cudf.Series([]) 
         self._cats_counts_host = None
+        self._cats_host = None
         self._cats_parts = []
         self._cats = cats if type(cats) == cudf.Series else cudf.Series([cats])
         # writer needs to be mapped to same file in folder.
@@ -78,8 +79,14 @@ class DLLabelEncoder(object):
         return codes._copy_construct(name=None, index=vals.index)
 
     def transform(self, y: cudf.Series, unk_idx=0) -> cudf.Series:
+        if self._cats_host is None:
+            raise Exception('Encoder was not fit!')
+
+        if len(self._cats_host) == 0:
+            raise Exception('Encoder was not fit!')
+
         avail_gpu_mem = numba.cuda.current_context().get_memory_info()[0]
-        sub_cats_size = int(avail_gpu_mem * self.gpu_mem_trans_use / self.series_size(self._cats_host))
+        sub_cats_size = int(avail_gpu_mem * self.gpu_mem_trans_use / self._cats_host.dtype.itemsize)
         i = 0
         encoded = None
         while i < len(self._cats_host):
