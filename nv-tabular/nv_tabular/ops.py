@@ -366,12 +366,13 @@ class Encoder(StatOperator):
         for name in cols:
             if not name in self.encoders:
                 if self.use_frequency:
+                    threshold_freq = self.freq_threshold.get(name, 0) if type(self.freq_threshold) is dict else self.freq_threshold
                     self.encoders[name] = DLLabelEncoder(name, 
                                                          use_frequency=self.use_frequency,
                                                          limit_frac=self.limit_frac, 
                                                          gpu_mem_util_limit = self.gpu_mem_util_limit,
                                                          gpu_mem_trans_use = self.gpu_mem_trans_use, # This one is used during transform
-                                                         freq_threshold=self.freq_threshold)
+                                                         freq_threshold=threshold_freq)
                 else:
                     self.encoders[name] = DLLabelEncoder(name)
                 gdf[name].append([None])

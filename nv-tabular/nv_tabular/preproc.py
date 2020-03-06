@@ -1,6 +1,6 @@
 import yaml
 import warnings
-
+import uuid
 import numpy as np
 import cudf
 from nv_tabular.ds_iterator import GPUDatasetIterator, Shuffler
@@ -553,7 +553,7 @@ class Workflow:
         return gdf, run_stat_ops
 
     # run phase
-    def exec_phase(self, itr, phase_index, export_path=None, record_stats=True):
+    def exec_phase(self, itr, phase_index, export_path=None, record_stats=True, shuffler=None, num_out_files=None):
         """ 
         Gather necessary column statistics in single pass. 
         Execute one phase only, given by phase index
@@ -568,8 +568,13 @@ class Workflow:
             gdf, stat_ops_ran = self.run_ops_for_phase(
                 gdf, self.phases[phase_index], record_stats=record_stats
             )
-            if export_path:
-                gdf.to_parquet(export_path)
+            if export_path and phase_index == len(self.phases) -1:
+                if shuffler:
+                    shuffler.stripe_df(gdf, export_path, num_out_files)
+                else:
+                    file_name = f"{num_out_files}.parquet"
+                    path = os.path.join(export_path, file_name)
+                    gdf.to_parquet(path)
         #                 pdb.set_trace()
         # if export is activated combine as many GDFs as possible and
         # then write them out cudf.concat([exp_gdf, gdf], axis=0)
@@ -579,29 +584,31 @@ class Workflow:
         self.get_stats()
 
 
-    def apply(self, dataset, apply_offline=True, record_stats=True, shuffle=False, output_path='./ds_export'):
-        # if no tasks have been loaded then we need to load internal config
+    def apply(self, dataset, apply_offline=True, record_stats=True, shuffle=False, output_path='./ds_export', num_out_files=None):
+        # if no tasks have been loaded then we need to load internal config\
+        shuffler = None
         if not self.phases:
             self.finalize()
+        if shuffle:
+            shuffler = Shuffler()
         if apply_offline:
-            self.update_stats(dataset, output_path=output_path, record_stats=record_stats)
+            self.update_stats(dataset, output_path=output_path, record_stats=record_stats, shuffler=shuffler, num_out_files=num_out_files)
         else:
-            self.apply_ops(dataset, output_path=output_path, record_stats=record_stats)
+            self.apply_ops(dataset, output_path=output_path, record_stats=record_stats, shuffler=shuffler, num_out_files=num_out_files)
+        shuffler.close_writers()
         if shuffle:
             # assumes we are using parquet always with in the preprocessor
             files_in = os.listdir(output_path)
-            Shuffler().shuffle(output_path, output_path, len(files_in) // 10)
+            shuffler.shuffle(output_path)
     
     
-    def update_stats(self, itr, end_phase=None, output_path=None, record_stats=True):
+    def update_stats(self, itr, end_phase=None, output_path=None, record_stats=True, shuffler=None, num_out_files=None):
         end = end_phase if end_phase else len(self.phases)
         for idx, _ in enumerate(self.phases[:end]):
-            if idx == len(self.phases) - 1 and output_path:
-                self.exec_phase(itr, idx, export_path=output_path, record_stats=record_stats)
-            self.exec_phase(itr, idx)
+            self.exec_phase(itr, idx, export_path=output_path, record_stats=record_stats, shuffler=shuffler, num_out_files=num_out_files)
 
 
-    def apply_ops(self, gdf, start_phase=None, end_phase=None, record_stats=False, output_path=None):
+    def apply_ops(self, gdf, start_phase=None, end_phase=None, record_stats=False, shuffler=None, output_path=None, num_out_files=None):
         """
         gdf: cudf dataframe
         record_stats: bool; run stats recording within run
@@ -617,8 +624,8 @@ class Workflow:
             gdf, stat_ops_ran = self.run_ops_for_phase(
                 gdf, self.phases[phase_index], record_stats=record_stats
             )
-            if phase_index == len(self.phases) - 1 and output_path:
-                gdf.to_parquet(output_path)
+            if phase_index == len(self.phases) - 1 and shuffler:
+                shuffler.stripe_df(gdf, output_path, num_out_files)
         return gdf
         
         

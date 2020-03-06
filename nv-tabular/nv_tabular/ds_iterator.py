@@ -1,6 +1,7 @@
 import cudf
 import sys
 import numba
+import cupy as cp
 import os
 import random
 import numpy as np
@@ -297,8 +298,9 @@ class GPUFileIterator:
             if type(dtype) is str:
                 if "hex" in dtype:
                     self.cur_chunk[col] = self.cur_chunk[col]._column.nvstrings.htoi()
+                    self.cur_chunk[col] = self.cur_chunk[col].astype(np.int32)
             else:
-                self.cur_chunkp[col] = self.cur_chunk[col].astype(dtype)
+                self.cur_chunk[col] = self.cur_chunk[col].astype(dtype)
 
 
 #
@@ -343,41 +345,77 @@ class GPUDatasetIterator:
                 
 
 class Shuffler():
+    writers = []
+    writer_files = []
+    
+    
+    def create_file_writers(self, gdf, out_dir, num_out_files):
+        out_files = [os.path.join(out_dir, f"{x}.parquet") for x in range(num_out_files)]
+        for fi in out_files:
+            self.writers.append(pq.ParquetWriter(fi, gdf.to_arrow().schema))
+        return out_files
+    
+    
+    def stripe_df(self, gdf, out_dir, num_out_files):
+        # instantiate writers if not already up
+        # shuffle
+        sort_key = "__sort_index__"
+        arr = cp.arange(len(gdf))
+        cp.random.shuffle(arr)
+        gdf[sort_key] = cudf.Series(arr)
+        gdf = gdf.sort_values(sort_key).drop(columns=[sort_key])
+        if not self.writers:
+            self.writer_files = self.create_file_writers(gdf, out_dir, num_out_files)
+        # get slice info
+        num_slices = gdf.shape[0] // num_out_files
+        int_slice_size = int(gdf.shape[0] / num_slices)
+        slice_size = int_slice_size if gdf.shape[0] % num_slices == 0 else int_slice_size + 1
+        for x in range(num_out_files):
+            start = x * slice_size
+            end = start + slice_size
+            to_write = gdf.iloc[cp.arange(start, end)]
+            self.writers[x].write_table(to_write.to_arrow())
+
+    def close_writers(self):
+        for writer in self.writers:
+            writer.close()
         
-    def setup_files(self, in_dir, num_out_files, **kwargs):
-        self.kwargs = kwargs
-        in_files = [os.path.join(in_dir, x) for x in os.listdir(in_dir)]
-        ds_itr = GPUDatasetIterator(in_files, **kwargs)
-        chunk = next(iter(ds_itr))
-        self.row_size = ds_itr.itr.engine.row_size
-        # shuffle list for fun
-        random.shuffle(in_files)
-        chunk_size = len(in_files)//num_out_files
-        if len(in_files) % num_out_files > 0:
-            chunk_size = chunk_size + 1
-        files_chunks = len(in_files)//chunk_size
-        if len(in_files) % chunk_size > 0:
-            files_chunks = files_chunks + 1
-        self.file_sets = []
-        for x in range(0, files_chunks):
-            start = x * chunk_size
-            end = start + chunk_size
-            self.file_sets.append(in_files[start:end])
+
+        
+#     def setup_files(self, in_dir, num_out_files, **kwargs):
+#         self.kwargs = kwargs
+#         in_files = [os.path.join(in_dir, x) for x in os.listdir(in_dir)]
+#         ds_itr = GPUDatasetIterator(in_files, **kwargs)
+#         chunk = next(iter(ds_itr))
+#         self.row_size = ds_itr.itr.engine.row_size
+#         # shuffle list for fun
+#         random.shuffle(in_files)
+#         chunk_size = len(in_files)//num_out_files
+#         if len(in_files) % num_out_files > 0:
+#             chunk_size = chunk_size + 1
+#         files_chunks = len(in_files)//chunk_size
+#         if len(in_files) % chunk_size > 0:
+#             files_chunks = files_chunks + 1
+#         self.file_sets = []
+#         for x in range(0, files_chunks):
+#             start = x * chunk_size
+#             end = start + chunk_size
+#             self.file_sets.append(in_files[start:end])
         
         
         
-    def shuffle(self, in_dir, tar_dir, num_out_files, **kwargs):
+    def shuffle(self, tar_dir):
         """
         tar_dir: path or string; output location of dataset to shuffle
         Control method for managing the shuffling of a dataset
         """
-        self.setup_files(in_dir, num_out_files, **kwargs)
-        interim_files = self.create_interim_files(tar_dir, self.file_sets)
-        final_files = self.create_final_files(tar_dir, interim_files)
+#         self.setup_files(in_dir, num_out_files, **kwargs)
+#         interim_files = self.create_interim_files(tar_dir, self.file_sets)
+        final_files = self.create_final_files(tar_dir, self.writer_files)
         return final_files
 
     
-    def create_final_files(self, tar_dir, interim_files):
+    def create_final_files(self, tar_dir, in_files):
         """
         Create the final set of files from the interim file set
         created before this call. 
@@ -386,38 +424,38 @@ class Shuffler():
         if not os.path.exists(fin_dir):
             os.makedirs(fin_dir)
         final_files = []
-        for idx, file in enumerate(interim_files):
+        for idx, file in enumerate(in_files):
             fn = os.path.join(fin_dir, f"shuffled_{idx}.parquet")
             final_files.append(fn)
             self.reshuffle(file, fn)
         return final_files
 
     
-    def create_interim_files(self, tar_dir, file_sets,):
-        """
-        tar_dir: path or string; output directory
-        file_sets: list of lists of files; 
-        This method collects all the dataframe parts and 
-        collates them together to form larger shuffled files
-        """
-        interim_dir = os.path.join(tar_dir,"shuffled_inter")
-        if not os.path.exists(interim_dir):
-                os.makedirs(interim_dir)
-        interim_files = []
-        for idx, chunkset in enumerate(file_sets):
-            data_itr = GPUDatasetIterator(chunkset, **self.kwargs)
-            fn = os.path.join(interim_dir, f"shuffled_{idx}.parquet")
-            interim_files.append(fn)
+#     def create_interim_files(self, tar_dir, file_sets,):
+#         """
+#         tar_dir: path or string; output directory
+#         file_sets: list of lists of files; 
+#         This method collects all the dataframe parts and 
+#         collates them together to form larger shuffled files
+#         """
+#         interim_dir = os.path.join(tar_dir,"shuffled_inter")
+#         if not os.path.exists(interim_dir):
+#                 os.makedirs(interim_dir)
+#         interim_files = []
+#         for idx, chunkset in enumerate(file_sets):
+#             data_itr = GPUDatasetIterator(chunkset, **self.kwargs)
+#             fn = os.path.join(interim_dir, f"shuffled_{idx}.parquet")
+#             interim_files.append(fn)
 
-            writer = None
-            for chunk in data_itr:
-                tab_chk = chunk.to_arrow()
-                if not writer:
-                    writer = pq.ParquetWriter(fn, tab_chk.schema)
-                writer.write_table(tab_chk)
-            writer.close()
-            writer = None
-        return interim_files
+#             writer = None
+#             for chunk in data_itr:
+#                 tab_chk = chunk.to_arrow()
+#                 if not writer:
+#                     writer = pq.ParquetWriter(fn, tab_chk.schema)
+#                 writer.write_table(tab_chk)
+#             writer.close()
+#             writer = None
+#         return interim_files
         
         
     def reshuffle(self, in_file, out_file, num_bags=10, mem_limit=0.1):
@@ -435,9 +473,11 @@ class Shuffler():
             bags.append(cudf.DataFrame())
         # create GPUDataset Iterator for interim file always parquet
         data_itr = GPUDatasetIterator(in_file, engine="parquet") 
-        max_size = _allowable_batch_size(mem_limit, self.row_size)
+        max_size = None
         writer = None
         for chunk in data_itr:
+            if not max_size:
+                max_size = _allowable_batch_size(mem_limit, data_itr.itr.engine.row_size)
             chunk_size = chunk.shape[0] / num_bags
             #split can be done with apply_chunk
             #split into bags
