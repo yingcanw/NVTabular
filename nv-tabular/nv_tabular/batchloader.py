@@ -160,21 +160,23 @@ def process_one_df(gdf, preproc, cats, conts, label, apply_ops=True):
 class DLCollator:
     transform = None
     preproc = None
-    
+    apply_ops = True
 
 
     def __init__(
         self,
         transform=create_tensors,
-        preproc=None
+        preproc=None,
+        apply_ops=True
     ):
         self.transform = transform
         self.preproc = preproc
+        self.apply_ops = apply_ops
 
 
     def gdf_col(self, gdf):
         batch = self.transform(
-            self.preproc, gdf=gdf[0]
+            self.preproc, gdf=gdf[0], apply_ops=self.apply_ops
         )
         return (batch[0], batch[1]), batch[2].long()
 

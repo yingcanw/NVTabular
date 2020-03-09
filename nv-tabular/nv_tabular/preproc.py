@@ -128,8 +128,38 @@ class Workflow:
 
         warnings.warn(f"No main key {phase} or sub key {target_cols} found in config")
 
+    def op_default_check(self, operators, default_in):
+        if not type(operators) is list:
+            operators = [operators]
+        for op in operators:
+            if not op.default_in in default_in:
+                warnings.warn(f"{op._id} was not add. This op is not designed for use with {default_in} columns") 
+                operators.remove(op)
+        
+        
     def add_feature(self, operators):
         self.config_add_ops(operators, "FE")
+        
+    def add_cat_feature(self, operators):
+        self.op_default_check(operators, 'categorical')
+        if operators:
+            self.add_feature(operators)
+        
+    def add_cont_feature(self, operators):
+        self.op_default_check(operators, 'continuous')
+        if operators:
+            self.add_feature(operators)
+    
+    def add_cat_preprocess(self, operators):
+        self.op_default_check(operators, 'categorical')
+        if operators:
+            self.add_preprocess(operators)
+        
+    def add_cont_preprocess(self, operators):
+        self.op_default_check(operators, 'continuous')
+        if operators:
+            self.add_preprocess(operators)
+        
 
     def add_preprocess(self, operators):
         """
@@ -569,12 +599,7 @@ class Workflow:
                 gdf, self.phases[phase_index], record_stats=record_stats
             )
             if export_path and phase_index == len(self.phases) -1:
-                if shuffler:
-                    shuffler.stripe_df(gdf, export_path, num_out_files)
-                else:
-                    file_name = f"{num_out_files}.parquet"
-                    path = os.path.join(export_path, file_name)
-                    gdf.to_parquet(path)
+                self.write_df(gdf, export_path, shuffler=shuffler, num_out_files=num_out_files)
         #                 pdb.set_trace()
         # if export is activated combine as many GDFs as possible and
         # then write them out cudf.concat([exp_gdf, gdf], axis=0)
@@ -595,10 +620,9 @@ class Workflow:
             self.update_stats(dataset, output_path=output_path, record_stats=record_stats, shuffler=shuffler, num_out_files=num_out_files)
         else:
             self.apply_ops(dataset, output_path=output_path, record_stats=record_stats, shuffler=shuffler, num_out_files=num_out_files)
-        shuffler.close_writers()
         if shuffle:
+            shuffler.close_writers()
             # assumes we are using parquet always with in the preprocessor
-            files_in = os.listdir(output_path)
             shuffler.shuffle(output_path)
     
     
@@ -624,10 +648,19 @@ class Workflow:
             gdf, stat_ops_ran = self.run_ops_for_phase(
                 gdf, self.phases[phase_index], record_stats=record_stats
             )
-            if phase_index == len(self.phases) - 1 and shuffler:
-                shuffler.stripe_df(gdf, output_path, num_out_files)
+            if phase_index == len(self.phases) - 1 and output_path:
+                self.write_df(gdf, output_path, shuffler=shuffler, num_out_files=num_out_files)
         return gdf
-        
+
+    
+    def write_df(self, gdf, export_path, shuffler, num_out_files):
+        if shuffler:
+            shuffler.stripe_df(gdf, export_path, num_out_files)
+        else:
+            file_name = f"{uuid.uuid4().hex}.parquet"
+            path = os.path.join(export_path, file_name)
+            gdf.to_parquet(path)
+    
         
     def get_stats(self):
         for name, stat_op in self.stat_ops.items():
@@ -685,4 +718,4 @@ class Workflow:
             stat_op.clear()
 
     def ds_to_tensors(self, itr, apply_ops=True):
-        return create_tensors(self, itr=itr)
+        return create_tensors(self, itr=itr, apply_ops=apply_ops)
