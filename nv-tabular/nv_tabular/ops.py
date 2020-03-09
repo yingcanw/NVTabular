@@ -385,7 +385,7 @@ class Encoder(StatOperator):
         return
 
     def cat_read_all_files(self, cat_obj):
-        cat_size = cat_obj._cats.shape[0]
+        cat_size = cat_obj.get_cats().shape[0]
         return cat_size + cat_obj.cat_exp_count
 
     def registered_stats(self):

@@ -604,7 +604,7 @@ class Workflow:
         for name, enc in encoders.items():
             stats_drop["encoders"][name] = (
                 enc.file_paths,
-                enc._cats.values_to_string(),
+                enc.get_cats().values_to_string(),
             )
         for name, stat in self.stats.items():
             if name not in stats_drop.keys():

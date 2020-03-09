@@ -42,7 +42,7 @@ class DLLabelEncoder(object):
         self._cats_counts_host = None
         self._cats_host = None
         self._cats_parts = []
-        self._cats = cats if type(cats) == cudf.Series else cudf.Series([cats])
+        self._cats_host = cats.to_pandas() if type(cats) == cudf.Series else cats
         # writer needs to be mapped to same file in folder.
         self.path = path or os.path.join(os.getcwd(), "label_encoders")
         self.folder_path = os.path.join(self.path, col)
@@ -135,7 +135,7 @@ class DLLabelEncoder(object):
         self._cats_parts.append(y_uniqs.to_pandas())
 
     def fit_unique_finalize(self):
-        y_uniqs = cudf.Series([])
+        y_uniqs = cudf.Series([]) if self._cats_host is None else cudf.from_pandas(self._cats_host)
         cats_uniqs_host = []
         for i in range(len(self._cats_parts)):
             y_uniqs_part = cudf.from_pandas(self._cats_parts.pop())
@@ -144,7 +144,8 @@ class DLLabelEncoder(object):
             else:
                 y_uniqs = y_uniqs.append(y_uniqs_part).unique() # Check merge option as well
             
-        cats = cudf.Series([None]).append(y_uniqs).reset_index(drop=True)
+        cats = cudf.Series([None]).append(y_uniqs)
+        cats = cats.unique().reset_index(drop=True)
         self._cats_host = cats.to_pandas()
         return self._cats_host.shape[0]
 
@@ -193,10 +194,9 @@ class DLLabelEncoder(object):
 
     def dump_cats(self):
         x = cudf.DataFrame()
-        x[self.col] = self._cats.unique()
+        x[self.col] = self.get_cats().unique()
         self.cat_exp_count = self.cat_exp_count + x.shape[0]
         x.to_parquet(self.folder_path)
-        self._cats = cudf.Series()
         # should find new file just exported
         new_file_path = [
             os.path.join(self.folder_path, x)
@@ -227,7 +227,10 @@ class DLLabelEncoder(object):
                         break
         return compr
 
+    def get_cats(self):
+        return cudf.from_pandas(self._cats_host).reset_index(drop=True)
+
     def __repr__(self):
         return "{0}(_cats={1!r})".format(
-            type(self).__name__, self._cats.values_to_string()
+            type(self).__name__, self.get_cats().values_to_string()
         )
