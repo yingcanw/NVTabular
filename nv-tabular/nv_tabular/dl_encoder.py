@@ -131,7 +131,7 @@ class DLLabelEncoder(object):
             return self.fit_unique_finalize()
 
     def fit_unique(self, y: cudf.Series):
-        y_uniqs = y.unique().reset_index(drop=True)
+        y_uniqs = y.unique()
         self._cats_parts.append(y_uniqs.to_pandas())
 
     def fit_unique_finalize(self):
@@ -143,27 +143,9 @@ class DLLabelEncoder(object):
                 y_uniqs = y_uniqs_part
             else:
                 y_uniqs = y_uniqs.append(y_uniqs_part).unique() # Check merge option as well
-            series_size_gpu = self.series_size(y_uniqs)
             
-            avail_gpu_mem, gpu_mem_util = self.get_gpu_mem_info()
-            if series_size_gpu > (avail_gpu_mem * self.limit_frac) or gpu_mem_util > self.gpu_mem_util_limit:
-                cats_uniqs_host.append(y_uniqs.to_pandas())
-                y_uniqs = cudf.Series([])
-
-        if len(cats_uniqs_host) == 0:
-            cats = cudf.Series([None]).append(y_uniqs).reset_index(drop=True)
-            self._cats_host = cats.to_pandas()
-        else:
-            y_uniqs_host = pd.DataFrame(cats_uniqs_host.pop())
-            
-            for i in range(len(cats_uniqs_host)):
-                y_uniqs_host_temp = pd.DataFrame(cats_uniqs_host.pop())
-                y_uniqs_host = y_uniqs_host.append(y_uniqs_host_temp)
-                y_uniqs_host = y_uniqs_host.iloc[:,0].unique()
-
-            self._cats_host = y_uniqs_host
-            
-
+        cats = cudf.Series([None]).append(y_uniqs).reset_index(drop=True)
+        self._cats_host = cats.to_pandas()
         return self._cats_host.shape[0]
 
     def fit_freq(self, y: cudf.Series):
