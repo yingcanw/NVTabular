@@ -367,12 +367,13 @@ class Shuffler():
         if not self.writers:
             self.writer_files = self.create_file_writers(gdf, out_dir, num_out_files)
         # get slice info
-        num_slices = gdf.shape[0] // num_out_files
-        int_slice_size = int(gdf.shape[0] / num_slices)
-        slice_size = int_slice_size if gdf.shape[0] % num_slices == 0 else int_slice_size + 1
+        int_slice_size = gdf.shape[0] // num_out_files
+        slice_size = int_slice_size if gdf.shape[0] % int_slice_size == 0 else int_slice_size + 1
         for x in range(num_out_files):
             start = x * slice_size
             end = start + slice_size
+            #check if end is over length
+            end = end if end <= gdf.shape[0] else gdf.shape[0]
             to_write = gdf.iloc[cp.arange(start, end)]
             self.writers[x].write_table(to_write.to_arrow())
 
