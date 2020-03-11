@@ -461,7 +461,7 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine, op_col
         cat_names=cat_names, cont_names=cont_names, label_name=label_name, to_cpu=False,
     )
 
-    processor.add_feature([ops.FillMissing(columns=op_columns), ops.LogOp()])
+    processor.add_feature([ops.ZeroFill(columns=op_columns), ops.LogOp()])
     processor.add_preprocess(ops.Normalize())
     processor.add_preprocess(ops.Categorify())
     processor.finalize()
@@ -483,8 +483,8 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine, op_col
         processor.load_stats(config_file)
 
     def get_norms(tar: cudf.Series):
-        ser_median = tar.dropna().quantile(0.5, interpolation="linear")
-        gdf = tar.fillna(ser_median)
+        gdf = tar.fillna(0)
+        gdf = gdf * (gdf >= 0).astype("int")
         gdf = np.log(gdf + 1)
         return gdf
 
@@ -493,22 +493,22 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine, op_col
     if not op_columns:
         assert math.isclose(
             get_norms(df.y).mean(),
-            processor.stats["means"]["y_FillMissing_LogOp"],
+            processor.stats["means"]["y_ZeroFill_LogOp"],
             rel_tol=1e-1,
         )
         assert math.isclose(
             get_norms(df.y).std(),
-            processor.stats["stds"]["y_FillMissing_LogOp"],
+            processor.stats["stds"]["y_ZeroFill_LogOp"],
             rel_tol=1e-1,
         )
     assert math.isclose(
         get_norms(df.x).mean(),
-        processor.stats["means"]["x_FillMissing_LogOp"],
+        processor.stats["means"]["x_ZeroFill_LogOp"],
         rel_tol=1e-1,
     )
     assert math.isclose(
         get_norms(df.x).std(),
-        processor.stats["stds"]["x_FillMissing_LogOp"],
+        processor.stats["stds"]["x_ZeroFill_LogOp"],
         rel_tol=1e-1,
     )
 

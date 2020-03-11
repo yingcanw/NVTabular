@@ -40,6 +40,11 @@ def test_gpu_file_iterator_dl(datasets, batch, dskey):
     df_expect = cudf.read_csv(paths[0], header=False, names=names)[mycols_csv]
     df_expect["id"] = df_expect["id"].astype("int64")
     df_itr = cudf.DataFrame()
+    
+    processor = pp.Workflow(
+        cat_names=["name-string"], cont_names=["x", "y", "id"], label_name=["label"], to_cpu=True,
+    )
+    
     data_itr = bl.FileItrDataset(
         paths[0],
         engine="csv",
@@ -48,9 +53,10 @@ def test_gpu_file_iterator_dl(datasets, batch, dskey):
         columns=mycols_csv,
         names=names,
     )
+    
     data_chain = torch.utils.data.ChainDataset([data_itr])
     dlc = bl.DLCollator(
-        cat_names=["name-string"], cont_names=["x", "y", "id"], label_name=["label"]
+        processor
     )
     data_dl = bl.DLDataLoader(
         data_itr, collate_fn=dlc.gdf_col, pin_memory=False, num_workers=0
@@ -66,6 +72,30 @@ def test_gpu_file_iterator_dl(datasets, batch, dskey):
     )
     assert b_size == len(data_chain)
     assert_eq(df_itr.reset_index(drop=True), df_expect.reset_index(drop=True))
+
+    
+@pytest.mark.parametrize("engine", ["csv", "parquet",  "csv-no-header"])    
+def test_shuffle_gpu(tmpdir, datasets, engine):
+    num_files = 2
+    paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
+    dirs = str(datasets[engine])
+    if engine == "parquet":
+        df1 = cudf.read_parquet(paths[0])[mycols_pq]
+    else:
+        df1 = cudf.read_csv(paths[0], header=False, names=allcols_csv)[mycols_csv]
+    shuf = ds.Shuffler()
+    shuf.writers = []
+    shuf.stripe_df(df1, tmpdir, num_files)
+    shuf.close_writers()
+    if engine == "parquet":
+        df3 = cudf.read_parquet(shuf.writer_files[0])[mycols_pq]
+        df4 = cudf.read_parquet(shuf.writer_files[1])[mycols_pq]
+    else:
+        df3 = cudf.read_parquet(shuf.writer_files[0])[mycols_csv]
+        df4 = cudf.read_parquet(shuf.writer_files[1])[mycols_csv]
+    assert df1.shape[0] == df3.shape[0] + df4.shape[0]
+
+
 
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
