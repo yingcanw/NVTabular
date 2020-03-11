@@ -7,6 +7,7 @@ import nv_tabular.ds_iterator as ds_itr
 import nv_tabular.ds_writer as ds_wtr
 import os
 import psutil
+import uuid
 from cudf.utils import cudautils
 from cudf.utils.dtypes import (
     is_categorical_dtype,
@@ -254,7 +255,9 @@ class DLLabelEncoder(object):
         x = cudf.DataFrame()
         x[self.col] = self._cats.unique()
         self.cat_exp_count = self.cat_exp_count + x.shape[0]
-        x.to_parquet(self.folder_path)
+        file_id = str(uuid.uuid4().hex) + '.parquet'
+        tar_file = os.path.join(self.folder_path, file_id)
+        x.to_parquet(tar_file)
         self._cats = cudf.Series()
         # should find new file just exported
         new_file_path = [

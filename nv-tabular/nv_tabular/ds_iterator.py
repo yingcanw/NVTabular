@@ -1,6 +1,11 @@
 import cudf
 import sys
 import numba
+import cupy as cp
+import os
+import random
+import numpy as np
+import pyarrow.parquet as pq
 
 #
 # Helper Function definitions
@@ -48,7 +53,6 @@ class GPUFileReader:
 
     def read_file_batch(self, nskip=0, columns=None, **kwargs):
         """ Read a chunk of a tabular-data file
-
         Parameters
         ----------
         nskip: int
@@ -57,7 +61,6 @@ class GPUFileReader:
             List of column names to read
         **kwargs:
             Other format-specific key-word arguments
-
         Returns
         -------
         A CuDF DataFrame
@@ -292,10 +295,12 @@ class GPUFileIterator:
 
     def set_dtypes(self):
         for col, dtype in self.dtypes.items():
-            if "hex" in dtype:
-                self.cur_chunk[col] = self.cur_chunk[col]._column.nvstrings.htoi()
+            if type(dtype) is str:
+                if "hex" in dtype:
+                    self.cur_chunk[col] = self.cur_chunk[col]._column.nvstrings.htoi()
+                    self.cur_chunk[col] = self.cur_chunk[col].astype(np.int32)
             else:
-                self.cur_chunkp[col] = self.cur_chunk[col].astype(dtype)
+                self.cur_chunk[col] = self.cur_chunk[col].astype(dtype)
 
 
 #
@@ -337,3 +342,175 @@ class GPUDatasetIterator:
                 path = self.paths[self.next_path_ind]
                 self.next_path_ind += 1
                 self.itr = GPUFileIterator(path, **self.kwargs)
+                
+
+class Shuffler():
+    writers = []
+    writer_files = []
+    
+    
+    def create_file_writers(self, gdf, out_dir, num_out_files):
+        out_files = [os.path.join(out_dir, f"{x}.parquet") for x in range(num_out_files)]
+        for fi in out_files:
+            self.writers.append(pq.ParquetWriter(fi, gdf.to_arrow().schema))
+        return out_files
+    
+    
+    def stripe_df(self, gdf, out_dir, num_out_files):
+        # instantiate writers if not already up
+        # shuffle
+        sort_key = "__sort_index__"
+        arr = cp.arange(len(gdf))
+        cp.random.shuffle(arr)
+        gdf[sort_key] = cudf.Series(arr)
+        gdf = gdf.sort_values(sort_key).drop(columns=[sort_key])
+        if not self.writers:
+            self.writer_files = self.create_file_writers(gdf, out_dir, num_out_files)
+        # get slice info
+        int_slice_size = gdf.shape[0] // num_out_files
+        slice_size = int_slice_size if gdf.shape[0] % int_slice_size == 0 else int_slice_size + 1
+        for x in range(num_out_files):
+            start = x * slice_size
+            end = start + slice_size
+            #check if end is over length
+            end = end if end <= gdf.shape[0] else gdf.shape[0]
+            to_write = gdf.iloc[cp.arange(start, end)]
+            self.writers[x].write_table(to_write.to_arrow())
+
+    def close_writers(self):
+        for writer in self.writers:
+            writer.close()
+        self.writers = []
+        
+
+        
+#     def setup_files(self, in_dir, num_out_files, **kwargs):
+#         self.kwargs = kwargs
+#         in_files = [os.path.join(in_dir, x) for x in os.listdir(in_dir)]
+#         ds_itr = GPUDatasetIterator(in_files, **kwargs)
+#         chunk = next(iter(ds_itr))
+#         self.row_size = ds_itr.itr.engine.row_size
+#         # shuffle list for fun
+#         random.shuffle(in_files)
+#         chunk_size = len(in_files)//num_out_files
+#         if len(in_files) % num_out_files > 0:
+#             chunk_size = chunk_size + 1
+#         files_chunks = len(in_files)//chunk_size
+#         if len(in_files) % chunk_size > 0:
+#             files_chunks = files_chunks + 1
+#         self.file_sets = []
+#         for x in range(0, files_chunks):
+#             start = x * chunk_size
+#             end = start + chunk_size
+#             self.file_sets.append(in_files[start:end])
+        
+        
+        
+    def shuffle(self, tar_dir):
+        """
+        tar_dir: path or string; output location of dataset to shuffle
+        Control method for managing the shuffling of a dataset
+        """
+#         self.setup_files(in_dir, num_out_files, **kwargs)
+#         interim_files = self.create_interim_files(tar_dir, self.file_sets)
+        final_files = self.create_final_files(tar_dir, self.writer_files)
+        return final_files
+
+    
+    def create_final_files(self, tar_dir, in_files):
+        """
+        Create the final set of files from the interim file set
+        created before this call. 
+        """
+        fin_dir = os.path.join(tar_dir,"shuffled_fin")
+        if not os.path.exists(fin_dir):
+            os.makedirs(fin_dir)
+        final_files = []
+        for idx, file in enumerate(in_files):
+            fn = os.path.join(fin_dir, f"shuffled_{idx}.parquet")
+            final_files.append(fn)
+            self.reshuffle(file, fn)
+        return final_files
+
+    
+#     def create_interim_files(self, tar_dir, file_sets,):
+#         """
+#         tar_dir: path or string; output directory
+#         file_sets: list of lists of files; 
+#         This method collects all the dataframe parts and 
+#         collates them together to form larger shuffled files
+#         """
+#         interim_dir = os.path.join(tar_dir,"shuffled_inter")
+#         if not os.path.exists(interim_dir):
+#                 os.makedirs(interim_dir)
+#         interim_files = []
+#         for idx, chunkset in enumerate(file_sets):
+#             data_itr = GPUDatasetIterator(chunkset, **self.kwargs)
+#             fn = os.path.join(interim_dir, f"shuffled_{idx}.parquet")
+#             interim_files.append(fn)
+
+#             writer = None
+#             for chunk in data_itr:
+#                 tab_chk = chunk.to_arrow()
+#                 if not writer:
+#                     writer = pq.ParquetWriter(fn, tab_chk.schema)
+#                 writer.write_table(tab_chk)
+#             writer.close()
+#             writer = None
+#         return interim_files
+        
+        
+    def reshuffle(self, in_file, out_file, num_bags=10, mem_limit=0.1):
+        """
+        in_file: the file to shuffle
+        out_file: the output file
+        num_bags: the number of containers you would like to use when 
+            slicing chunks of dataset
+        mem_limit: decimal; 0.0 - 1.0; the memory limit of the gpu to use
+        This takes a dataset file and shuffles it in chunks
+        """
+        # bags consist of cudf dataframes empty to start
+        bags = []
+        for x in range(num_bags):
+            bags.append(cudf.DataFrame())
+        # create GPUDataset Iterator for interim file always parquet
+        data_itr = GPUDatasetIterator(in_file, engine="parquet") 
+        max_size = None
+        writer = None
+        for chunk in data_itr:
+            if not max_size:
+                max_size = _allowable_batch_size(mem_limit, data_itr.itr.engine.row_size)
+            chunk_size = chunk.shape[0] / num_bags
+            #split can be done with apply_chunk
+            #split into bags
+            for x in range(0, num_bags):
+                # add slice to chosen bag
+                start = x * chunk_size
+                end = start + chunk_size
+                chk_slice = chunk.iloc[int(start):int(end)]
+                b_idx = np.random.randint(0, len(bags))
+                if bags[b_idx].empty:
+                    bags[b_idx] = chk_slice
+                else:
+                    bags[b_idx] = cudf.concat([bags[b_idx], chk_slice], axis=0, ignore_index=True)
+                # check all bag sizes
+                if bags[b_idx].shape[0] >= max_size:
+                    # when size gets to a certain percentage dump to file using writer
+                    bag_table = bags[b_idx].to_arrow()
+                    if not writer:
+                        writer = pq.ParquetWriter(out_file, bag_table.schema)
+                    writer.write_table(bag_table)
+                    # clear bag after write to file
+                    bag = cudf.DataFrame()
+                
+        for bag in bags:
+            if not bag.empty:
+                table_bg = bag.to_arrow()
+                if not writer:
+                    writer = pq.ParquetWriter(out_file, table_bg.schema)
+                writer.write_table(table_bg)
+            # clear the dataframe
+        # Done writing, clear the writer
+        if writer:
+            writer.close()
+            

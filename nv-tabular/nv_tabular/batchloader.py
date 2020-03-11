@@ -82,38 +82,8 @@ class TensorItr:
         self.tensors = [tensor[idx] for tensor in self.tensors]
 
 
-def create_tensors(gdf, preproc, cat_names, cont_names, label_name, to_cpu=False):
-    # insert preprocessor
-    # transform cats here
-    gdf = gdf[0]
-    if preproc:
-        gdf = preproc.apply_ops(gdf)
-    gdf_cats, gdf_conts, gdf_label = gdf[cat_names], gdf[cont_names], gdf[label_name]
-    del gdf
-    cats, conts, label = {}, {}, {}
-    if len(gdf_cats) > 0:
-        to_tensor(gdf_cats, torch.long, cats, to_cpu=to_cpu)
-    if len(gdf_conts) > 0:
-        to_tensor(gdf_conts, torch.float32, conts, to_cpu=to_cpu)
-    if len(gdf_label) > 0:
-        to_tensor(gdf_label, torch.float32, label, to_cpu=to_cpu)
-    del gdf_cats, gdf_label, gdf_conts
-    tar_col = cats.keys()
-    cats_list = (
-        [cats[x] for x in sorted(cats.keys(), key=lambda entry: entry.split("_")[0])]
-        if cats
-        else None
-    )
-    conts_list = [conts[x] for x in sorted(conts.keys())] if conts else None
-    label_list = [label[x] for x in sorted(label.keys())] if label else None
-    del cats, conts, label
-    cats = torch.stack(cats_list, dim=1) if len(cats_list) > 0 else None
-    conts = torch.stack(conts_list, dim=1) if len(conts_list) > 0 else None
-    label = torch.cat(label_list, dim=0) if len(label_list) > 0 else None
-    return cats, conts, label
-
-
-def to_tensor(gdf: cudf.DataFrame, dtype, tensor_list, to_cpu=False):
+        
+def _to_tensor(gdf: cudf.DataFrame, dtype, tensor_list, to_cpu=False):
     if gdf.empty:
         return
     for column in gdf.columns:
@@ -122,57 +92,91 @@ def to_tensor(gdf: cudf.DataFrame, dtype, tensor_list, to_cpu=False):
         t = from_dlpack(g).type(dtype)
         t = t.to(torch.device("cpu")) if to_cpu else t
         tensor_list[column] = (
-            t if column not in tensor_list else torch.cat([tensor_list[column], t])
+            t
+            if column not in tensor_list
+            else torch.cat([tensor_list[column], t])
         )
         del g
+        
+def create_tensors(preproc, itr=None, gdf=None, apply_ops=True):
+    cats, conts, label = {}, {}, {}
+    if itr:
+        for gdf in itr:
+            process_one_df(gdf, preproc, cats, conts, label, apply_ops=apply_ops)
+    elif gdf:
+        process_one_df(gdf, preproc, cats, conts, label, apply_ops=apply_ops)
+
+    cats_list = (
+        [
+            cats[x]
+            for x in sorted(cats.keys(), key=lambda entry: entry.split("_")[0])
+        ]
+        if cats
+        else None
+    )
+    conts_list = [conts[x] for x in sorted(conts.keys())] if conts else None
+    label_list = [label[x] for x in sorted(label.keys())] if label else None
+
+    # Change cats, conts to dim=1 for column dim=0 for df sub section
+    cats = torch.stack(cats_list, dim=1) if len(cats_list) > 0 else None
+    conts = torch.stack(conts_list, dim=1) if len(conts_list) > 0 else None
+    label = torch.cat(label_list, dim=0) if len(label_list) > 0 else None
+    return cats, conts, label
+
+
+def get_final_cols(preproc):
+    if not 'cols' in preproc.columns_ctx['final']:
+        preproc.create_final_cols()
+    cat_names = sorted(
+        preproc.columns_ctx["final"]["cols"]["categorical"],
+        key=lambda entry: entry.split("_")[0],
+    )
+    cont_names = sorted(preproc.columns_ctx["final"]["cols"]["continuous"])
+    label_name = sorted(preproc.columns_ctx["final"]["cols"]["label"])
+    return cat_names, cont_names, label_name
+
+def process_one_df(gdf, preproc, cats, conts, label, apply_ops=True):
+    if apply_ops:
+        gdf = preproc.apply_ops(gdf)
+    
+    cat_names, cont_names, label_name = get_final_cols(preproc)
+
+    gdf_cats, gdf_conts, gdf_label = (
+        gdf[cat_names],
+        gdf[cont_names],
+        gdf[label_name],
+    )
+    del gdf
+
+    if len(gdf_cats) > 0:
+        _to_tensor(gdf_cats, torch.long, cats, to_cpu=preproc.to_cpu)
+    if len(gdf_conts) > 0:
+        _to_tensor(gdf_conts, torch.float32, conts, to_cpu=preproc.to_cpu)
+    if len(gdf_label) > 0:
+        _to_tensor(gdf_label, torch.float32, label, to_cpu=preproc.to_cpu)
+
 
 
 class DLCollator:
     transform = None
     preproc = None
-    cat_names = []
-    cont_names = []
-    label_name = []
+    apply_ops = True
+
 
     def __init__(
         self,
         transform=create_tensors,
         preproc=None,
-        cat_names=None,
-        cont_names=None,
-        label_name=None,
+        apply_ops=True
     ):
         self.transform = transform
         self.preproc = preproc
-        if self.preproc:
-            cat_names_key = self.preproc.columns_ctx["final"]["ctx"]["categorical"]
-            cont_names_key = self.preproc.columns_ctx["final"]["ctx"]["continuous"]
-            label_name_key = self.preproc.columns_ctx["final"]["ctx"]["label"]
-            for key in cat_names_key:
-                self.cat_names = (
-                    self.cat_names + self.preproc.columns_ctx["categorical"][key]
-                )
-            for key in cont_names_key:
-                self.cont_names = (
-                    self.cont_names + self.preproc.columns_ctx["continuous"][key]
-                )
-            for key in label_name_key:
-                if key in "label":
-                    key = "base"
-                self.label_name = (
-                    self.label_name + self.preproc.columns_ctx["label"][key]
-                )
-            self.cat_names = sorted(list(set(self.cat_names)))
-            self.cont_names = sorted(list(set(self.cont_names)))
-            self.label_name = sorted(list(set(self.label_name)))
-        else:
-            self.cat_names = sorted(cat_names) if cat_names else []
-            self.cont_names = sorted(cont_names) if cont_names else []
-            self.label_name = sorted(label_name) if label_name else []
+        self.apply_ops = apply_ops
+
 
     def gdf_col(self, gdf):
         batch = self.transform(
-            gdf, self.preproc, self.cat_names, self.cont_names, self.label_name,
+            self.preproc, gdf=gdf[0], apply_ops=self.apply_ops
         )
         return (batch[0], batch[1]), batch[2].long()
 

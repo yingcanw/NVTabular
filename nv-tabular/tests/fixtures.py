@@ -70,8 +70,8 @@ def datasets(tmpdir_factory):
         end="2000-01-04",
         freq="60s",
         dtypes={
-            "name-cat": "category",
-            "name-string": "category",
+            "name-cat": str,
+            "name-string": str,
             "id": int,
             "label": int,
             "x": float,
@@ -100,8 +100,8 @@ def datasets(tmpdir_factory):
     half = int(len(df) // 2)
 
     # Write Parquet Dataset
-    df.iloc[:half].to_parquet(str(datadir["parquet"]), chunk_size=1000)
-    df.iloc[half:].to_parquet(str(datadir["parquet"]), chunk_size=1000)
+    df.iloc[:half].to_parquet(str(datadir["parquet"].join("dataset-0.parquet")), chunk_size=1000)
+    df.iloc[half:].to_parquet(str(datadir["parquet"].join("dataset-1.parquet")), chunk_size=1000)
 
     # Write CSV Dataset (Leave out categorical column)
     df.iloc[:half].drop(columns=["name-cat"]).to_csv(

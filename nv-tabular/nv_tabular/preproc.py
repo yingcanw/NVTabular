@@ -1,11 +1,12 @@
 import yaml
 import warnings
-
+import uuid
 import numpy as np
 import cudf
-from nv_tabular.ds_iterator import GPUDatasetIterator
+from nv_tabular.ds_iterator import GPUDatasetIterator, Shuffler
 from nv_tabular.dl_encoder import DLLabelEncoder
 from nv_tabular.ds_writer import DatasetWriter
+from nv_tabular.batchloader import create_tensors
 from nv_tabular.ops import *
 
 try:
@@ -127,8 +128,38 @@ class Workflow:
 
         warnings.warn(f"No main key {phase} or sub key {target_cols} found in config")
 
+    def op_default_check(self, operators, default_in):
+        if not type(operators) is list:
+            operators = [operators]
+        for op in operators:
+            if not op.default_in in default_in:
+                warnings.warn(f"{op._id} was not add. This op is not designed for use with {default_in} columns") 
+                operators.remove(op)
+        
+        
     def add_feature(self, operators):
         self.config_add_ops(operators, "FE")
+        
+    def add_cat_feature(self, operators):
+        self.op_default_check(operators, 'categorical')
+        if operators:
+            self.add_feature(operators)
+        
+    def add_cont_feature(self, operators):
+        self.op_default_check(operators, 'continuous')
+        if operators:
+            self.add_feature(operators)
+    
+    def add_cat_preprocess(self, operators):
+        self.op_default_check(operators, 'categorical')
+        if operators:
+            self.add_preprocess(operators)
+        
+    def add_cont_preprocess(self, operators):
+        self.op_default_check(operators, 'continuous')
+        if operators:
+            self.add_preprocess(operators)
+        
 
     def add_preprocess(self, operators):
         """
@@ -426,6 +457,12 @@ class Workflow:
                 final["label"] = col_ctx
             else:
                 final["label"] = final["label"] + col_ctx
+        # if no operators run in preprocessing we grab base columns
+        if not 'continuous' in final:
+            # set base columns
+            final['continuous'] = self.columns_ctx['continuous']['base']
+        if not 'categorical' in final:
+            final['categorical'] = self.columns_ctx['categorical']['base']
         self.columns_ctx["final"] = {}
         self.columns_ctx["final"]["ctx"] = final
 
@@ -468,13 +505,6 @@ class Workflow:
                     # get op from op_id
                     # operators need to be instantiated with state information
                     target_op = all_ops[op_id](**self.ops_args[op_id])
-                    if not target_op:
-                        warnings.warn(
-                            f"""Did not find corresponding op for id: {op_id}. 
-                                      If this is a custom operator, check it was properyl
-                                      loaded."""
-                        )
-                        break
                     if dep_set:
                         for dep_grp in dep_set:
                             # handle required stats of target op on
@@ -530,24 +560,6 @@ class Workflow:
                 return True
         return False
 
-    def update_stats(self, itr, end_phase=None):
-        # if no tasks have been loaded then we need to load internal config
-        if not self.phases:
-            self.finalize()
-        end = end_phase if end_phase else len(self.phases)
-        for idx, _ in enumerate(self.phases[:end]):
-            # set parameters for export necessary,
-            # running only stats ops
-            # not running stat_ops < --- may not be necessary may mean running apply_ops
-            new_path = self.exec_phase(itr, idx)
-            if new_path:
-                new_files = [
-                    os.path.join(new_path, x)
-                    for x in os.listdir(new_path)
-                    if x.endswith("parquet")
-                ]
-                itr = GPUDatasetIterator(new_files, engine="parquet")
-
     def run_ops_for_phase(self, gdf, tasks, record_stats=True):
         run_stat_ops = []
         for task in tasks:
@@ -571,14 +583,23 @@ class Workflow:
         return gdf, run_stat_ops
 
     # run phase
-    def exec_phase(self, itr, phase_index):
-        """ Gather necessary column statistics in single pass.
+    def exec_phase(self, itr, phase_index, export_path=None, record_stats=True, shuffler=None, num_out_files=None):
+        """ 
+        Gather necessary column statistics in single pass. 
+        Execute one phase only, given by phase index
         """
+        stat_ops_ran=[]
         for gdf in itr:
-            # put the FE tasks here roll through them
+            # run all previous phases to get df to correct state
             for i in range(phase_index):
-                gdf, _ = self.run_ops_for_phase(gdf, self.phases[i], record_stats=False)
-            gdf, stat_ops_ran = self.run_ops_for_phase(gdf, self.phases[phase_index])
+                gdf, _ = self.run_ops_for_phase(
+                    gdf, self.phases[i], record_stats=False
+                )
+            gdf, stat_ops_ran = self.run_ops_for_phase(
+                gdf, self.phases[phase_index], record_stats=record_stats
+            )
+            if export_path and phase_index == len(self.phases) -1:
+                self.write_df(gdf, export_path, shuffler=shuffler, num_out_files=num_out_files)
         #                 pdb.set_trace()
         # if export is activated combine as many GDFs as possible and
         # then write them out cudf.concat([exp_gdf, gdf], axis=0)
@@ -587,6 +608,60 @@ class Workflow:
             # missing bubble up to prerprocessor
         self.get_stats()
 
+
+    def apply(self, dataset, apply_offline=True, record_stats=True, shuffle=False, output_path='./ds_export', num_out_files=None):
+        # if no tasks have been loaded then we need to load internal config\
+        shuffler = None
+        if not self.phases:
+            self.finalize()
+        if shuffle:
+            shuffler = Shuffler()
+        if apply_offline:
+            self.update_stats(dataset, output_path=output_path, record_stats=record_stats, shuffler=shuffler, num_out_files=num_out_files)
+        else:
+            self.apply_ops(dataset, output_path=output_path, record_stats=record_stats, shuffler=shuffler, num_out_files=num_out_files)
+        if shuffle:
+            shuffler.close_writers()
+            # assumes we are using parquet always with in the preprocessor
+            shuffler.shuffle(output_path)
+    
+    
+    def update_stats(self, itr, end_phase=None, output_path=None, record_stats=True, shuffler=None, num_out_files=None):
+        end = end_phase if end_phase else len(self.phases)
+        for idx, _ in enumerate(self.phases[:end]):
+            self.exec_phase(itr, idx, export_path=output_path, record_stats=record_stats, shuffler=shuffler, num_out_files=num_out_files)
+
+
+    def apply_ops(self, gdf, start_phase=None, end_phase=None, record_stats=False, shuffler=None, output_path=None, num_out_files=None):
+        """
+        gdf: cudf dataframe
+        record_stats: bool; run stats recording within run
+        Controls the application of registered preprocessing phase op
+        tasks, can only be used after apply has been performed
+        """
+        # put phases that you want to run represented in a slice
+        # dont run stat_ops in apply
+        # run the PP ops
+        start = start_phase if start_phase else 0
+        end = end_phase if end_phase else len(self.phases)
+        for phase_index in range(start, end):
+            gdf, stat_ops_ran = self.run_ops_for_phase(
+                gdf, self.phases[phase_index], record_stats=record_stats
+            )
+            if phase_index == len(self.phases) - 1 and output_path:
+                self.write_df(gdf, output_path, shuffler=shuffler, num_out_files=num_out_files)
+        return gdf
+
+    
+    def write_df(self, gdf, export_path, shuffler, num_out_files):
+        if shuffler:
+            shuffler.stripe_df(gdf, export_path, num_out_files)
+        else:
+            file_name = f"{uuid.uuid4().hex}.parquet"
+            path = os.path.join(export_path, file_name)
+            gdf.to_parquet(path)
+    
+        
     def get_stats(self):
         for name, stat_op in self.stat_ops.items():
             stat_vals = stat_op.stats_collected()
@@ -603,16 +678,21 @@ class Workflow:
         encoders = self.stats.get("encoders", {})
         for name, enc in encoders.items():
             stats_drop["encoders"][name] = (
-                enc.file_paths,
                 enc._cats.values_to_string(),
             )
         for name, stat in self.stats.items():
             if name not in stats_drop.keys():
                 stats_drop[name] = stat
         main_obj["stats"] = stats_drop
-        main_obj["phases"] = self.phases
         main_obj["columns_ctx"] = self.columns_ctx
-        main_obj["tasks"] = self.master_task_list
+        op_args = {}
+        tasks = []
+        for task in self.master_task_list:
+            tasks.append([task[0]._id, task[1], task[2], [x._id for x in task[3]]])
+            op = self.find_op(task[0]._id)
+            op_args[op._id] = op.__dict__
+        main_obj['op_args'] = op_args
+        main_obj["tasks"] = tasks
         with open(path, "w") as outfile:
             yaml.dump(main_obj, outfile, default_flow_style=False)
 
@@ -624,37 +704,14 @@ class Workflow:
         with open(path, "r") as infile:
             main_obj = yaml.load(infile)
             _set_stats(self, main_obj["stats"])
-            self.master_task_list = main_obj["tasks"]
-            self.column_ctx = main_obj["columns_ctx"]
-            self.phases = main_obj["phases"]
+            self.master_task_list = self.recreate_master_task_list(main_obj["tasks"], main_obj["op_args"])
+            self.columns_ctx = main_obj["columns_ctx"]
         encoders = self.stats.get("encoders", {})
         for col, cats in encoders.items():
             self.stats["encoders"][col] = DLLabelEncoder(
-                col, file_paths=cats[0], cats=cudf.Series(cats[1])
+                col, cats=cudf.Series(cats[0])
             )
         self.reg_all_ops(self.master_task_list)
-
-    def apply_ops(self, gdf, start_phase=None, end_phase=None, record_stats=False):
-        """
-        gdf: cudf dataframe
-        record_stats: bool; run stats recording within run
-        Controls the application of registered preprocessing phase op
-        tasks
-        """
-        # put phases that you want to run represented in a slice
-        # dont run stat_ops in apply
-        # run the PP ops
-        start = start_phase if start_phase else 0
-        end = end_phase if end_phase else len(self.phases)
-        for phase_index in range(start, end):
-            for i in range(phase_index):
-                gdf, _ = self.run_ops_for_phase(
-                    gdf, self.phases[i], record_stats=record_stats
-                )
-            gdf, _ = self.run_ops_for_phase(
-                gdf, self.phases[phase_index], record_stats=record_stats
-            )
-        return gdf
 
     def clear_stats(self):
 
@@ -665,62 +722,20 @@ class Workflow:
             stat_op.clear()
 
     def ds_to_tensors(self, itr, apply_ops=True):
-        import torch
-        from torch.utils.dlpack import from_dlpack
-
-        def _to_tensor(gdf: cudf.DataFrame, dtype, tensor_list, to_cpu=False):
-            if gdf.empty:
-                return
-            for column in gdf.columns:
-                gdf_col = gdf[column]
-                g = gdf_col.to_dlpack()
-                t = from_dlpack(g).type(dtype)
-                t = t.to(torch.device("cpu")) if to_cpu else t
-                tensor_list[column] = (
-                    t
-                    if column not in tensor_list
-                    else torch.cat([tensor_list[column], t])
-                )
-                del g
-
-        cats, conts, label = {}, {}, {}
-        cat_names = sorted(
-            self.columns_ctx["final"]["cols"]["categorical"],
-            key=lambda entry: entry.split("_")[0],
-        )
-        cont_names = sorted(self.columns_ctx["final"]["cols"]["continuous"])
-        label_name = sorted(self.columns_ctx["final"]["cols"]["label"])
-        for gdf in itr:
-            if apply_ops:
-                gdf = self.apply_ops(gdf)
-
-            gdf_cats, gdf_conts, gdf_label = (
-                gdf[cat_names],
-                gdf[cont_names],
-                gdf[label_name],
-            )
-            del gdf
-
-            if len(gdf_cats) > 0:
-                _to_tensor(gdf_cats, torch.long, cats, to_cpu=self.to_cpu)
-            if len(gdf_conts) > 0:
-                _to_tensor(gdf_conts, torch.float32, conts, to_cpu=self.to_cpu)
-            if len(gdf_label) > 0:
-                _to_tensor(gdf_label, torch.float32, label, to_cpu=self.to_cpu)
-
-        cats_list = (
-            [
-                cats[x]
-                for x in sorted(cats.keys(), key=lambda entry: entry.split("_")[0])
-            ]
-            if cats
-            else None
-        )
-        conts_list = [conts[x] for x in sorted(conts.keys())] if conts else None
-        label_list = [label[x] for x in sorted(label.keys())] if label else None
-
-        # Change cats, conts to dim=1 for column dim=0 for df sub section
-        cats = torch.stack(cats_list, dim=1) if len(cats_list) > 0 else None
-        conts = torch.stack(conts_list, dim=1) if len(conts_list) > 0 else None
-        label = torch.cat(label_list, dim=0) if len(label_list) > 0 else None
-        return cats, conts, label
+        return create_tensors(self, itr=itr, apply_ops=apply_ops)
+    
+    def recreate_master_task_list(self, task_list, op_args):
+        master_list = []
+        for task in task_list:
+            op_id = task[0]
+            main_grp = task[1]
+            sub_cols = task[2]
+            dep_ids = task[3]
+            op = all_ops[op_id](**op_args[op_id])
+            dep_ops = []
+            for ops_id in dep_ids:
+                dep_ops.append(all_ops[ops_id]())
+                
+            master_list.append((op, main_grp, sub_cols, dep_ops))
+        return master_list
+    
