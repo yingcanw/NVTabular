@@ -678,16 +678,21 @@ class Workflow:
         encoders = self.stats.get("encoders", {})
         for name, enc in encoders.items():
             stats_drop["encoders"][name] = (
-                enc.file_paths,
                 enc._cats.values_to_string(),
             )
         for name, stat in self.stats.items():
             if name not in stats_drop.keys():
                 stats_drop[name] = stat
         main_obj["stats"] = stats_drop
-        main_obj["phases"] = self.phases
         main_obj["columns_ctx"] = self.columns_ctx
-        main_obj["tasks"] = self.master_task_list
+        op_args = {}
+        tasks = []
+        for task in self.master_task_list:
+            tasks.append([task[0]._id, task[1], task[2], [x._id for x in task[3]]])
+            op = self.find_op(task[0]._id)
+            op_args[op._id] = op.__dict__
+        main_obj['op_args'] = op_args
+        main_obj["tasks"] = tasks
         with open(path, "w") as outfile:
             yaml.dump(main_obj, outfile, default_flow_style=False)
 
@@ -699,13 +704,12 @@ class Workflow:
         with open(path, "r") as infile:
             main_obj = yaml.load(infile)
             _set_stats(self, main_obj["stats"])
-            self.master_task_list = main_obj["tasks"]
-            self.column_ctx = main_obj["columns_ctx"]
-            self.phases = main_obj["phases"]
+            self.master_task_list = self.recreate_master_task_list(main_obj["tasks"], main_obj["op_args"])
+            self.columns_ctx = main_obj["columns_ctx"]
         encoders = self.stats.get("encoders", {})
         for col, cats in encoders.items():
             self.stats["encoders"][col] = DLLabelEncoder(
-                col, file_paths=cats[0], cats=cudf.Series(cats[1])
+                col, cats=cudf.Series(cats[0])
             )
         self.reg_all_ops(self.master_task_list)
 
@@ -719,3 +723,19 @@ class Workflow:
 
     def ds_to_tensors(self, itr, apply_ops=True):
         return create_tensors(self, itr=itr, apply_ops=apply_ops)
+    
+    def recreate_master_task_list(self, task_list, op_args):
+        master_list = []
+        for task in task_list:
+            op_id = task[0]
+            main_grp = task[1]
+            sub_cols = task[2]
+            dep_ids = task[3]
+            op = all_ops[op_id](**op_args[op_id])
+            dep_ops = []
+            for ops_id in dep_ids:
+                dep_ops.append(all_ops[ops_id]())
+                
+            master_list.append((op, main_grp, sub_cols, dep_ops))
+        return master_list
+    

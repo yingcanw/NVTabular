@@ -380,6 +380,7 @@ class Shuffler():
     def close_writers(self):
         for writer in self.writers:
             writer.close()
+        self.writers = []
         
 
         

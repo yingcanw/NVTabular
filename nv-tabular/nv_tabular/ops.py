@@ -19,7 +19,7 @@ class Operator:
 
     @property
     def _id(self):
-        return self.__class__.__name__
+        return str(self.__class__.__name__)
 
     def describe(self):
         raise NotImplementedError("All operators must have a desription.")
@@ -37,7 +37,7 @@ class Operator:
 
     def export_op(self):
         export = {}
-        export[self._id] = self.__dict__
+        export[str(self._id)] = self.__dict__
         return export
 
 
@@ -136,7 +136,7 @@ class DFOperator(TransformOperator):
 
 
 class StatOperator(Operator):
-    def __init__(self, columns=None):
+    def __init__(self, columns=None, **kwargs):
         super(StatOperator, self).__init__(columns)
 
     def read_itr(
@@ -271,6 +271,8 @@ class Moments(StatOperator):
         """
         for col in self.varis.keys():
             self.stds[col] = float(np.sqrt(self.varis[col]))
+            self.varis[col] = float(self.varis[col])
+            self.means[col] = float(self.means[col])
 
     def registered_stats(self):
         return ["means", "stds", "vars", "counts"]
