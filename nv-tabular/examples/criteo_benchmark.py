@@ -14,6 +14,7 @@ def parse_args():
     parser.add_argument("in_file_type", help="type of file (i.e. parquet, csv, orc)")
     parser.add_argument("freq_thresh", help="frequency threshold for categorical can be int or dict")
     parser.add_argument("batch_size", help="type of file (i.e. parquet, csv, orc)")
+    parser.add_argument("gpu_mem_frac", help="size of gpu to allot to the dataset iterator")
     return parser.parse_args()
 
 
@@ -82,8 +83,8 @@ cat_names =  ['C' + str(x) for x in range(1,27)]
 cols = ['label']  + cont_names + cat_names
 print('Creating Workflow Object')
 proc = Workflow(cat_names=cat_names, cont_names=cont_names, label_name=['label'], to_cpu=to_cpu)
-proc.add_feature([ZeroFill(), LogOp()])
-proc.add_preprocess(Normalize())
+proc.add_feature([ZeroFill(replace=True), LogOp(replace=True)])
+proc.add_preprocess(Normalize(replace=True))
 if args.freq_thresh == 0:
     proc.add_preprocess(Categorify())
 else:    
@@ -91,8 +92,8 @@ else:
 print('Creating Dataset Iterator')
 trains_itrs = None
 if args.in_file_type in 'csv':
-    trains_itrs = GPUDatasetIterator(train_set, names=cols, engine='csv', sep='\t')
-    valid_itrs = GPUDatasetIterator(valid_set, names=cols, engine='csv', sep='\t')
+    trains_itrs = GPUDatasetIterator(train_set, names=cols, engine='csv', sep='\t', gpu_memory_frac=float(args.gpu_mem_frac))
+    valid_itrs = GPUDatasetIterator(valid_set, names=cols, engine='csv', sep='\t', gpu_memory_frac=float(args.gpu_mem_frac))
 else:
     trains_itrs = GPUDatasetIterator(train_set, names=cols, engine='parquet')
     valids_itrs = GPUDatasetIterator(valid_set, names=cols, engine='parquet')
@@ -101,8 +102,8 @@ print('Running apply')
 out_train = os.path.join(args.out_dir, 'train')
 out_valid = os.path.join(args.out_dir, 'valid')
 
-proc.apply(trains_itrs, apply_offline=True, record_stats=True, shuffle=True, output_path=out_train)
-proc.apply(valid_itrs, apply_offline=True, record_stats=False, shuffle=True, output_path=out_valid)
+proc.apply(trains_itrs, apply_offline=True, record_stats=True, shuffle=True, output_path=out_train, num_out_files=len(train_set))
+proc.apply(valid_itrs, apply_offline=True, record_stats=False, shuffle=True, output_path=out_valid, num_out_files=len(valid_set))
 print(proc.timings)
 
 embeddings = [x[1] for x in proc.df_ops['Categorify'].get_emb_sz(proc.stats["categories"], proc.columns_ctx['categorical']['base'])]
