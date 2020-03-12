@@ -11,8 +11,8 @@ services:
 - docker:dind
 
 stages:
-- test
 - docs
+- test
 
 test_build:
   cache:
