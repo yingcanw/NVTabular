@@ -26,6 +26,8 @@ test_build:
 
 pages:
   stage: docs
+  tags:
+  - RapidsDL
   script:
     - mkdir .public
     - cp -r nv-tabular/build/html/ .public
