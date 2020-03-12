@@ -377,6 +377,7 @@ class Encoder(StatOperator):
                                                          freq_threshold=threshold_freq)
                 else:
                     self.encoders[name] = DLLabelEncoder(name)
+
                 gdf[name].append([None])
 
             self.encoders[name].fit(gdf[name])
@@ -386,14 +387,11 @@ class Encoder(StatOperator):
         """ Finalize categorical encoders (get categories).
         """
         for name, val in self.encoders.items():
-            if self.use_frequency:
-                self.categories[name] = val.fit_freq_finalize()
-            else:
-                self.categories[name] = self.cat_read_all_files(val)
+            self.categories[name] = val.fit_finalize()
         return
 
     def cat_read_all_files(self, cat_obj):
-        cat_size = cat_obj._cats.shape[0]
+        cat_size = cat_obj.get_cats().shape[0]
         return cat_size + cat_obj.cat_exp_count
 
     def registered_stats(self):

@@ -16,14 +16,10 @@ def test_dl_encoder_fit_transform_fim(datasets, batch, dskey, use_frequency):
     df_expect = cudf.read_csv(paths[0], header=False, names=names)[mycols_csv]
     df_expect["id"] = df_expect["id"].astype("int64")
     # create file iterator to go through the
-    enc = encoder.DLLabelEncoder("name-string")
-    if use_frequency:
-        enc.fit_freq(df_expect["name-string"])
-        enc.fit_freq_finalize()
-        new_ser = enc.transform_freq(df_expect["name-string"])
-    else:
-        enc.fit_unique(df_expect["name-string"])
-        new_ser = enc.transform_unique(df_expect["name-string"])
+    enc = encoder.DLLabelEncoder("name-string", use_frequency=use_frequency)
+    enc.fit(df_expect["name-string"])
+    enc.fit_finalize()
+    new_ser = enc.transform(df_expect["name-string"])
     unis = set(df_expect["name-string"])
     assert len(unis) == max(new_ser)
     for file in enc.file_paths:
@@ -47,8 +43,7 @@ def test_dl_encoder_fit_transform_ltm(datasets, batch, dskey, use_frequency):
     for chunk in data_itr:
         enc.fit(chunk["name-string"])
   
-    if use_frequency:
-        enc.fit_freq_finalize()
+    enc.fit_finalize()
     new_ser = enc.transform(df_expect["name-string"])
     unis = df_expect["name-string"].unique().values_to_string()
     # set does not pick up None values so must be added if found in
