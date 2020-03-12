@@ -93,7 +93,7 @@ print('Creating Dataset Iterator')
 trains_itrs = None
 if args.in_file_type in 'csv':
     trains_itrs = GPUDatasetIterator(train_set, names=cols, engine='csv', sep='\t', gpu_memory_frac=float(args.gpu_mem_frac))
-    valid_itrs = GPUDatasetIterator(valid_set, names=cols, engine='csv', sep='\t', gpu_memory_frac=float(args.gpu_mem_frac))
+    valids_itrs = GPUDatasetIterator(valid_set, names=cols, engine='csv', sep='\t', gpu_memory_frac=float(args.gpu_mem_frac))
 else:
     trains_itrs = GPUDatasetIterator(train_set, names=cols, engine='parquet')
     valids_itrs = GPUDatasetIterator(valid_set, names=cols, engine='parquet')
@@ -103,14 +103,18 @@ out_train = os.path.join(args.out_dir, 'train')
 out_valid = os.path.join(args.out_dir, 'valid')
 
 proc.apply(trains_itrs, apply_offline=True, record_stats=True, shuffle=True, output_path=out_train, num_out_files=len(train_set))
-proc.apply(valid_itrs, apply_offline=True, record_stats=False, shuffle=True, output_path=out_valid, num_out_files=len(valid_set))
+proc.apply(valids_itrs, apply_offline=True, record_stats=False, shuffle=True, output_path=out_valid, num_out_files=len(valid_set))
 print(proc.timings)
 
 embeddings = [x[1] for x in proc.df_ops['Categorify'].get_emb_sz(proc.stats["categories"], proc.columns_ctx['categorical']['base'])]
 print('Creating Iterators for dataloader')
 start = time()
-t_batch_sets = [FileItrDataset(x, names=cols, engine=args.in_file_type, batch_size=args.batch_size, sep="\t") for x in train_set]
-v_batch_sets = [FileItrDataset(x, names=cols, engine=args.in_file_type, batch_size=args.batch_size, sep="\t") for x in valid_set]
+
+new_train_set = [os.path.join(out_train, x) for x in os.listdir(out_train) if x.endswith("parquet")]
+new_valid_set = [os.path.join(out_valid, x) for x in os.listdir(out_valid) if x.endswith("parquet")]
+
+t_batch_sets = [FileItrDataset(x, names=cols, engine=args.in_file_type, batch_size=args.batch_size, sep="\t") for x in new_train_set]
+v_batch_sets = [FileItrDataset(x, names=cols, engine=args.in_file_type, batch_size=args.batch_size, sep="\t") for x in new_valid_set]
 
 t_chain = torch.utils.data.ChainDataset(t_batch_sets)
 v_chain = torch.utils.data.ChainDataset(v_batch_sets)
