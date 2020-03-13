@@ -588,6 +588,7 @@ class Workflow:
         Gather necessary column statistics in single pass. 
         Execute one phase only, given by phase index
         """
+        
         stat_ops_ran=[]
         for gdf in itr:
             # run all previous phases to get df to correct state
@@ -598,16 +599,25 @@ class Workflow:
             gdf, stat_ops_ran = self.run_ops_for_phase(
                 gdf, self.phases[phase_index], record_stats=record_stats
             )
-            if export_path and phase_index == len(self.phases) -1:
-                self.write_df(gdf, export_path, shuffler=shuffler, num_out_files=num_out_files)
+
+            if export_path and phase_index == len(self.phases) - 1:
+                shuffler.add_data(gdf, export_path, num_out_files)
+
+            #if export_path and not self.file_create_started and phase_index == len(self.phases) - 1:
+            #    self.file_create_started = True
+            #    shuffler.start_writers(gdf, export_path, num_out_files)
+
+            #if export_path and phase_index == len(self.phases) -1:
+            #    self.write_df(gdf, export_path, shuffler=shuffler, num_out_files=num_out_files)
+
         #                 pdb.set_trace()
         # if export is activated combine as many GDFs as possible and
         # then write them out cudf.concat([exp_gdf, gdf], axis=0)
+
         for stat_op in stat_ops_ran:
             stat_op.read_fin()
             # missing bubble up to prerprocessor
         self.get_stats()
-
 
     def apply(self, dataset, apply_offline=True, record_stats=True, shuffle=False, output_path='./ds_export', num_out_files=None):
         # if no tasks have been loaded then we need to load internal config\
@@ -616,6 +626,7 @@ class Workflow:
             self.finalize()
         if shuffle:
             shuffler = Shuffler()
+            self.file_create_started = False
         if apply_offline:
             self.update_stats(dataset, output_path=output_path, record_stats=record_stats, shuffler=shuffler, num_out_files=num_out_files)
         else:
@@ -624,7 +635,6 @@ class Workflow:
             shuffler.close_writers()
             # assumes we are using parquet always with in the preprocessor
             shuffler.shuffle(output_path)
-    
     
     def update_stats(self, itr, end_phase=None, output_path=None, record_stats=True, shuffler=None, num_out_files=None):
         end = end_phase if end_phase else len(self.phases)

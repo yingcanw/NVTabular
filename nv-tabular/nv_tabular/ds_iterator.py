@@ -6,6 +6,8 @@ import os
 import random
 import numpy as np
 import pyarrow.parquet as pq
+import threading
+import time
 
 #
 # Helper Function definitions
@@ -347,15 +349,85 @@ class GPUDatasetIterator:
 class Shuffler():
     writers = []
     writer_files = []
-    
-    
+
+    def __init__(self):
+        self.cont_saving = True
+        self.lock_bucket = threading.Lock()
+        self.buckets = None
+        self.files_created = False
+        self.file_create_started = False
+        
     def create_file_writers(self, gdf, out_dir, num_out_files):
         out_files = [os.path.join(out_dir, f"{x}.parquet") for x in range(num_out_files)]
-        for fi in out_files:
-            self.writers.append(pq.ParquetWriter(fi, gdf.to_arrow().schema))
+        if not self.files_created:
+            for fi in out_files:
+                self.writers.append(pq.ParquetWriter(fi, gdf.to_arrow().schema))
+
+        while True:
+            print("Waiting data to process")
+            self.lock_bucket.acquire()
+            if self.buckets is not None:
+                all_empty = True
+                for i in range(len(self.buckets)):
+                    if len(self.buckets[i]) > 0:
+                        all_empty = False
+                        dt = self.buckets[i].pop()
+                        self.writers[i].write_table(dt) 
+                print("data processed")
+
+                if not self.cont_saving and all_empty:
+                    self.lock_bucket.release()
+                    break
+
+            self.lock_bucket.release()
+            time.sleep(1)
+
+        print("Returning")
         return out_files
     
-    
+    def start_writers(self, gdf, out_dir, num_out_files):
+        print("Start")
+        self.out_dir = out_dir
+   
+        #if not self.writers:
+        print("Started")
+        self.writers_thread = threading.Thread(target=self.create_file_writers, args=(gdf, out_dir, num_out_files,))
+        self.writers_thread.start()
+
+    def add_data(self, gdf, out_dir, num_out_files):
+        print("Adding data")
+        if self.buckets is None:
+            self.buckets = list()
+            print("buckets creating")
+            for x in range(num_out_files):
+                new_elem = list()
+                self.buckets.append(new_elem)
+
+        sort_key = "__sort_index__"
+        arr = cp.arange(len(gdf))
+        cp.random.shuffle(arr)
+        gdf[sort_key] = cudf.Series(arr)
+        gdf = gdf.sort_values(sort_key).drop(columns=[sort_key])
+
+        if not self.file_create_started:
+            self.file_create_started = True
+            self.start_writers(gdf, out_dir, num_out_files)
+
+        # get slice info
+        int_slice_size = gdf.shape[0] //num_out_files
+        slice_size = int_slice_size if gdf.shape[0] % int_slice_size == 0 else int_slice_size + 1
+        self.lock_bucket.acquire()
+        for x in range(num_out_files):
+            start = x * slice_size
+            end = start + slice_size
+            #check if end is over length
+            end = end if end <= gdf.shape[0] else gdf.shape[0]
+            to_write = gdf.iloc[cp.arange(start, end)]
+            self.buckets[x].append(to_write.to_arrow())
+
+        self.lock_bucket.release()
+        print("Added data")
+
     def stripe_df(self, gdf, out_dir, num_out_files):
         # instantiate writers if not already up
         # shuffle
@@ -378,6 +450,11 @@ class Shuffler():
             self.writers[x].write_table(to_write.to_arrow())
 
     def close_writers(self):
+        print("Still working")
+        self.cont_saving = False
+        self.writers_thread.join()
+        print("Done")
+
         for writer in self.writers:
             writer.close()
         self.writers = []
