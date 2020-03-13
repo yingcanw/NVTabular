@@ -600,7 +600,7 @@ class Workflow:
                 gdf, self.phases[phase_index], record_stats=record_stats
             )
 
-            if export_path and phase_index == len(self.phases) - 1:
+            if export_path and shuffler and phase_index == len(self.phases) - 1:
                 shuffler.add_data(gdf, export_path, num_out_files)
 
             #if export_path and not self.file_create_started and phase_index == len(self.phases) - 1:
