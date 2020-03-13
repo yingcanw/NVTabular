@@ -52,7 +52,7 @@ import matplotlib.pyplot as plt
 
 
 
-# Args needed GPU_id, in_dir, out_dir, in_file_type, freq_threshold, batch_size, layers
+# Args needed GPU_id, in_dir, out_dir, in_file_type, freq_threshold, batch_size, gpu_mem_frac
 # day_split
 args = parse_args()
 print(args)

@@ -3,7 +3,7 @@ import argparse
 import torch
 import pandas as pd
 import numpy as np
-from time import time 
+import time
 import sys
 sys.path.insert(1, '../')
 
