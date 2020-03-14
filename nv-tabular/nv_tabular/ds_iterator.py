@@ -399,11 +399,13 @@ class Shuffler():
     def start_writers(self, gdf, out_dir, num_out_files):
         print("Start")
         self.out_dir = out_dir
-   
-        #if not self.writers:
-        print("Started")
         self.writers_thread = threading.Thread(target=self.create_file_writers, args=(gdf, out_dir, num_out_files,))
         self.writers_thread.start()
+        print("Started")
+
+    def start_add_data(self, gdf, out_dir, num_out_files):
+        add_data_thread = threading.Thread(target=self.add_data, args=(gdf, out_dir, num_out_files,))
+        add_data_thread.start()
 
     def add_data(self, gdf, out_dir, num_out_files):
         print("Adding data")
@@ -427,16 +429,17 @@ class Shuffler():
         # get slice info
         int_slice_size = gdf.shape[0] //num_out_files
         slice_size = int_slice_size if gdf.shape[0] % int_slice_size == 0 else int_slice_size + 1
-        self.lock_bucket.acquire()
+
         for x in range(num_out_files):
             start = x * slice_size
             end = start + slice_size
             #check if end is over length
             end = end if end <= gdf.shape[0] else gdf.shape[0]
             to_write = gdf.iloc[cp.arange(start, end)]
+            self.lock_bucket.acquire()
             self.buckets[x].append(to_write.to_arrow())
+            self.lock_bucket.release()
 
-        self.lock_bucket.release()
         print("Added data")
 
     def stripe_df(self, gdf, out_dir, num_out_files):
