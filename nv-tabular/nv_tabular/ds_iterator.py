@@ -359,28 +359,39 @@ class Shuffler():
         
     def create_file_writers(self, gdf, out_dir, num_out_files):
         out_files = [os.path.join(out_dir, f"{x}.parquet") for x in range(num_out_files)]
-        if not self.files_created:
-            for fi in out_files:
-                self.writers.append(pq.ParquetWriter(fi, gdf.to_arrow().schema))
+        #if not self.files_created:
+        #    for fi in out_files:
+        #        self.writers.append(pq.ParquetWriter(fi, gdf.to_arrow().schema))
 
         while True:
             print("Waiting data to process")
-            self.lock_bucket.acquire()
+            
             if self.buckets is not None:
+                if not self.files_created:
+                    if len(self.buckets[0]) > 0:
+                        self.files_created = True 
+                        sch = self.buckets[0][0].schema
+                        for fi in out_files:
+                            self.writers.append(pq.ParquetWriter(fi, sch))
+                        print("Files created")
+                    else:
+                        time.sleep(0.1)
+                        continue
+
                 all_empty = True
                 for i in range(len(self.buckets)):
                     if len(self.buckets[i]) > 0:
                         all_empty = False
+                        self.lock_bucket.acquire()
                         dt = self.buckets[i].pop()
+                        self.lock_bucket.release()
                         self.writers[i].write_table(dt) 
                 print("data processed")
 
                 if not self.cont_saving and all_empty:
-                    self.lock_bucket.release()
                     break
 
-            self.lock_bucket.release()
-            time.sleep(1)
+            time.sleep(0.1)
 
         print("Returning")
         return out_files
