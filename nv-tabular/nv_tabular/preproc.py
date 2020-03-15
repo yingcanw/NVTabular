@@ -634,7 +634,7 @@ class Workflow:
         if shuffle:
             shuffler.close_writers()
             # assumes we are using parquet always with in the preprocessor
-            shuffler.shuffle(output_path)
+            # shuffler.shuffle(output_path)
     
     def update_stats(self, itr, end_phase=None, output_path=None, record_stats=True, shuffler=None, num_out_files=None):
         end = end_phase if end_phase else len(self.phases)

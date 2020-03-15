@@ -356,6 +356,7 @@ class Shuffler():
         self.locks_bucket = []
         self.buckets = None
         self.file_create_started = False
+        self.b_idxs = None
         
     def create_file_writers(self, idx, out_file):
         file_created = False
@@ -371,7 +372,7 @@ class Shuffler():
                         writer = pq.ParquetWriter(out_file, sch)
                         self.writers.append(writer)
                         file_created = True 
-                        print("Thead:", idx, "File created")
+                        #print("Thead:", idx, "File created")
                     else:
                         time.sleep(0.1)
                         continue
@@ -387,7 +388,7 @@ class Shuffler():
 
             time.sleep(0.1)
 
-        print("Thead:", idx, "Returning")
+        #print("Thead:", idx, "Returning")
         return out_file
 
     def create_file_writers_v1(self, gdf, out_dir, num_out_files):
@@ -403,7 +404,7 @@ class Shuffler():
                         sch = self.buckets[0][0].schema
                         for fi in out_files:
                             self.writers.append(pq.ParquetWriter(fi, sch))
-                        print("Files created")
+                        #print("Files created")
                     else:
                         time.sleep(0.1)
                         continue
@@ -423,32 +424,31 @@ class Shuffler():
 
             time.sleep(0.1)
 
-        print("Returning")
+        #print("Returning")
         return out_files
     
     def start_writers(self, out_dir, num_out_files):
         self.out_dir = out_dir
         self.writers_thread = []
         for idx in range(num_out_files):
-            print("Starting thread:", idx)
             out_file = os.path.join(out_dir, f"{idx}.parquet")
-            #self.writer_files.append(out_file)
+            # self.writer_files.append(out_file)
             new_writer = threading.Thread(target=self.create_file_writers, args=(idx, out_file))
             new_writer.start()
             self.writers_thread.append(new_writer)
 
     def start_writers_v1(self, gdf, out_dir, num_out_files):
-        print("Start")
+        #print("Start")
         self.out_dir = out_dir
         self.writers_thread = threading.Thread(target=self.create_file_writers, args=(gdf, out_dir, num_out_files,))
         self.writers_thread.start()
-        print("Started")
+        #print("Started")
 
     def add_data(self, gdf, out_dir, num_out_files):
-        print("Adding data")
+        #print("Adding data")
         if self.buckets is None:
             self.buckets = list()
-            print("buckets creating")
+            #print("buckets creating")
             for x in range(num_out_files):
                 new_elem = list()
                 self.buckets.append(new_elem)
@@ -467,6 +467,9 @@ class Shuffler():
         # get slice info
         int_slice_size = gdf.shape[0] //num_out_files
         slice_size = int_slice_size if gdf.shape[0] % int_slice_size == 0 else int_slice_size + 1
+        if self.b_idxs is None:
+            self.b_idxs = np.arange(num_out_files)
+        np.random.shuffle(self.b_idxs)
 
         for x in range(num_out_files):
             start = x * slice_size
@@ -474,17 +477,18 @@ class Shuffler():
             #check if end is over length
             end = end if end <= gdf.shape[0] else gdf.shape[0]
             to_write = gdf.iloc[cp.arange(start, end)]
-            self.locks_bucket[x].acquire()
-            self.buckets[x].append(to_write.to_arrow())
-            self.locks_bucket[x].release()
+            b_idx = self.b_idxs[x]
+            self.locks_bucket[b_idx].acquire()
+            self.buckets[b_idx].append(to_write.to_arrow())
+            self.locks_bucket[b_idx].release()
 
-        print("Added data")
+        #print("Added data")
 
     def add_data_v1(self, gdf, out_dir, num_out_files):
-        print("Adding data")
+        #print("Adding data")
         if self.buckets is None:
             self.buckets = list()
-            print("buckets creating")
+            #print("buckets creating")
             for x in range(num_out_files):
                 new_elem = list()
                 self.buckets.append(new_elem)
@@ -513,7 +517,7 @@ class Shuffler():
             self.buckets[x].append(to_write.to_arrow())
             self.lock_bucket.release()
 
-        print("Added data")
+        #print("Added data")
 
     def stripe_df(self, gdf, out_dir, num_out_files):
         # instantiate writers if not already up
@@ -537,21 +541,21 @@ class Shuffler():
             self.writers[x].write_table(to_write.to_arrow())
 
     def close_writers(self):
-        print("Still working")
+        #print("Still working")
         self.cont_saving = False
         for writer_thread in self.writers_thread:
             writer_thread.join()
-        print("Done")
+        #print("Done")
 
         for writer in self.writers:
             writer.close()
         self.writers = []
     
     def close_writers_v1(self):
-        print("Still working")
+        #print("Still working")
         self.cont_saving = False
         self.writers_thread.join()
-        print("Done")
+        #print("Done")
 
         for writer in self.writers:
             writer.close()
@@ -579,8 +583,6 @@ class Shuffler():
 #             end = start + chunk_size
 #             self.file_sets.append(in_files[start:end])
         
-        
-        
     def shuffle(self, tar_dir):
         """
         tar_dir: path or string; output location of dataset to shuffle
@@ -591,7 +593,6 @@ class Shuffler():
         final_files = self.create_final_files(tar_dir, self.writer_files)
         return final_files
 
-    
     def create_final_files(self, tar_dir, in_files):
         """
         Create the final set of files from the interim file set
@@ -607,7 +608,6 @@ class Shuffler():
             self.reshuffle(file, fn)
         return final_files
 
-    
 #     def create_interim_files(self, tar_dir, file_sets,):
 #         """
 #         tar_dir: path or string; output directory
