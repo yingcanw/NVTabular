@@ -43,11 +43,11 @@ class Operator:
 
 class TransformOperator(Operator):
     preprocessing = False
-    replace = False
+    replace = True
     default_in = None
     default_out = None
 
-    def __init__(self, columns=None, preprocessing=True, replace=False):
+    def __init__(self, columns=None, preprocessing=True, replace=True):
         super().__init__(columns=columns)
         self.preprocessing = preprocessing
         self.replace = replace

@@ -83,8 +83,8 @@ cat_names =  ['C' + str(x) for x in range(1,27)]
 cols = ['label']  + cont_names + cat_names
 print('Creating Workflow Object')
 proc = Workflow(cat_names=cat_names, cont_names=cont_names, label_name=['label'], to_cpu=to_cpu)
-proc.add_feature([ZeroFill(replace=True), LogOp(replace=True)])
-proc.add_preprocess(Normalize(replace=True))
+proc.add_feature([ZeroFill(), LogOp()])
+proc.add_preprocess(Normalize())
 if args.freq_thresh == 0:
     proc.add_preprocess(Categorify())
 else:    
@@ -113,14 +113,14 @@ start = time()
 new_train_set = [os.path.join(out_train, x) for x in os.listdir(out_train) if x.endswith("parquet")]
 new_valid_set = [os.path.join(out_valid, x) for x in os.listdir(out_valid) if x.endswith("parquet")]
 
-t_batch_sets = [FileItrDataset(x, names=cols, engine=args.in_file_type, batch_size=args.batch_size, sep="\t") for x in new_train_set]
-v_batch_sets = [FileItrDataset(x, names=cols, engine=args.in_file_type, batch_size=args.batch_size, sep="\t") for x in new_valid_set]
+t_batch_sets = [FileItrDataset(x, names=cols, engine=args.in_file_type, batch_size=int(args.batch_size)) for x in new_train_set]
+v_batch_sets = [FileItrDataset(x, names=cols, engine=args.in_file_type, batch_size=int(args.batch_size)) for x in new_valid_set]
 
 t_chain = torch.utils.data.ChainDataset(t_batch_sets)
 v_chain = torch.utils.data.ChainDataset(v_batch_sets)
 t_final = time() - start 
 print(t_final)
-dlc = DLCollator(preproc=proc)
+dlc = DLCollator(preproc=proc, apply_ops=False)
 print('Creating dataloaders')
 start = time()
 t_data = DLDataLoader(t_chain, collate_fn=dlc.gdf_col, pin_memory=False, num_workers=0)

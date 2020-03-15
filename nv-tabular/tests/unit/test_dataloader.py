@@ -84,7 +84,7 @@ def test_shuffle_gpu(tmpdir, datasets, engine):
     else:
         df1 = cudf.read_csv(paths[0], header=False, names=allcols_csv)[mycols_csv]
     shuf = ds.Shuffler()
-    shuf.writers = []
+#     shuf.writers = []
     shuf.stripe_df(df1, tmpdir, num_files)
     shuf.close_writers()
     if engine == "parquet":

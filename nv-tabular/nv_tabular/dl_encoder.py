@@ -8,6 +8,7 @@ import nv_tabular.ds_writer as ds_wtr
 import os
 import psutil
 import uuid
+import cupy as cp
 from cudf.utils import cudautils
 from cudf.utils.dtypes import (
     is_categorical_dtype,
@@ -69,7 +70,7 @@ class DLLabelEncoder(object):
         if dtype is None:
             dtype = min_scalar_type(len(cats), 32)
 
-        order = cudf.Series(cudautils.arange(len(vals)))
+        order = cudf.Series(cp.arange(len(vals)))
         codes = cats.index
 
         value = cudf.DataFrame({"value": cats, "code": codes})

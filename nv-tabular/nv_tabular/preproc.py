@@ -8,6 +8,7 @@ from nv_tabular.dl_encoder import DLLabelEncoder
 from nv_tabular.ds_writer import DatasetWriter
 from nv_tabular.batchloader import create_tensors
 from nv_tabular.ops import *
+import time
 
 try:
     import cupy as cp
@@ -94,6 +95,7 @@ class Workflow:
         self.to_cpu = to_cpu
         self.export = export
         self.ops_args = {}
+        self.timings = {"shuffle_df": 0.0, "shuffle_fin": 0.0, "preproc_apply": 0.0, "preproc_reapply": 0.0}
         if config:
             self.load_config(config)
         else:
@@ -591,13 +593,17 @@ class Workflow:
         stat_ops_ran=[]
         for gdf in itr:
             # run all previous phases to get df to correct state
+            start = time.time()
             for i in range(phase_index):
                 gdf, _ = self.run_ops_for_phase(
                     gdf, self.phases[i], record_stats=False
                 )
+            self.timings['preproc_reapply'] += time.time() - start
+            start = time.time()
             gdf, stat_ops_ran = self.run_ops_for_phase(
                 gdf, self.phases[phase_index], record_stats=record_stats
             )
+            self.timings['preproc_apply'] += time.time() - start
             if export_path and phase_index == len(self.phases) -1:
                 self.write_df(gdf, export_path, shuffler=shuffler, num_out_files=num_out_files)
         #                 pdb.set_trace()
@@ -623,7 +629,9 @@ class Workflow:
         if shuffle:
             shuffler.close_writers()
             # assumes we are using parquet always with in the preprocessor
+            start = time.time()
             shuffler.shuffle(output_path)
+            self.timings['shuffle_fin'] += time.time() - start
     
     
     def update_stats(self, itr, end_phase=None, output_path=None, record_stats=True, shuffler=None, num_out_files=None):
@@ -645,9 +653,11 @@ class Workflow:
         start = start_phase if start_phase else 0
         end = end_phase if end_phase else len(self.phases)
         for phase_index in range(start, end):
+            start = time.time()
             gdf, stat_ops_ran = self.run_ops_for_phase(
                 gdf, self.phases[phase_index], record_stats=record_stats
             )
+            self.timings['preproc_apply'] += time.time() - start
             if phase_index == len(self.phases) - 1 and output_path:
                 self.write_df(gdf, output_path, shuffler=shuffler, num_out_files=num_out_files)
         return gdf
@@ -655,7 +665,9 @@ class Workflow:
     
     def write_df(self, gdf, export_path, shuffler, num_out_files):
         if shuffler:
+            start = time.time()
             shuffler.stripe_df(gdf, export_path, num_out_files)
+            self.timings['shuffle_df'] += time.time() - start
         else:
             file_name = f"{uuid.uuid4().hex}.parquet"
             path = os.path.join(export_path, file_name)

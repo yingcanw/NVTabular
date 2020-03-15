@@ -350,6 +350,8 @@ class Shuffler():
     
     
     def create_file_writers(self, gdf, out_dir, num_out_files):
+        self.writers = []
+        self.writer_files = []
         out_files = [os.path.join(out_dir, f"{x}.parquet") for x in range(num_out_files)]
         for fi in out_files:
             self.writers.append(pq.ParquetWriter(fi, gdf.to_arrow().schema))
