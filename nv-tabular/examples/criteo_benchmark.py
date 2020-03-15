@@ -85,7 +85,7 @@ print('Creating Workflow Object')
 proc = Workflow(cat_names=cat_names, cont_names=cont_names, label_name=['label'], to_cpu=to_cpu)
 proc.add_feature([ZeroFill(), LogOp()])
 proc.add_preprocess(Normalize())
-if args.freq_thresh == 0:
+if int(args.freq_thresh) == 0:
     proc.add_preprocess(Categorify())
 else:    
     proc.add_preprocess(Categorify(use_frequency=True, freq_threshold=int(args.freq_thresh)))
