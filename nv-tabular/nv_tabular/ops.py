@@ -554,7 +554,8 @@ class Categorify(DFOperator):
     default_out = CAT
 
     def __init__(self, use_frequency=False, freq_threshold=0, limit_frac=0.5, 
-                 gpu_mem_util_limit=0.5, gpu_mem_trans_use=0.5, columns=None,        preprocessing=True, replace=False):
+                 gpu_mem_util_limit=0.5, gpu_mem_trans_use=0.5, columns=None,
+                 preprocessing=True, replace=True):
         super().__init__(columns=columns, preprocessing=preprocessing, replace=replace)
         self.use_frequency = use_frequency
         self.freq_threshold = freq_threshold

@@ -83,12 +83,12 @@ cat_names =  ['C' + str(x) for x in range(1,27)]
 cols = ['label']  + cont_names + cat_names
 print('Creating Workflow Object')
 proc = Workflow(cat_names=cat_names, cont_names=cont_names, label_name=['label'], to_cpu=to_cpu)
-proc.add_feature([ZeroFill(), LogOp()])
-proc.add_preprocess(Normalize())
+proc.add_feature([ZeroFill(replace=True), LogOp(replace=True)])
+proc.add_preprocess(Normalize(replace=True))
 if int(args.freq_thresh) == 0:
-    proc.add_preprocess(Categorify())
+    proc.add_preprocess(Categorify(replace=True))
 else:    
-    proc.add_preprocess(Categorify(use_frequency=True, freq_threshold=int(args.freq_thresh)))
+    proc.add_preprocess(Categorify(replace=True, use_frequency=True, freq_threshold=int(args.freq_thresh)))
 print('Creating Dataset Iterator')
 trains_itrs = None
 if args.in_file_type in 'csv':
