@@ -12,7 +12,6 @@ ALL = "all"
 
 
 class Operator:
-    columns = None
 
     def __init__(self, columns=columns):
         self.columns = columns
