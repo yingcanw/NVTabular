@@ -6,3 +6,4 @@ data*/*
 *.orc
 *.csv
 dist/*
+*build/*

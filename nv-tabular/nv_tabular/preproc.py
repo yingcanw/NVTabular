@@ -95,7 +95,13 @@ class Workflow:
         self.to_cpu = to_cpu
         self.export = export
         self.ops_args = {}
-        self.timings = {"shuffle_df": 0.0, "shuffle_fin": 0.0, "preproc_apply": 0.0, "preproc_reapply": 0.0}
+        self.current_file_num = 0
+        self.timings = {
+            "shuffle_df": 0.0,
+            "shuffle_fin": 0.0,
+            "preproc_apply": 0.0,
+            "preproc_reapply": 0.0,
+        }
         if config:
             self.load_config(config)
         else:
@@ -135,33 +141,33 @@ class Workflow:
             operators = [operators]
         for op in operators:
             if not op.default_in in default_in:
-                warnings.warn(f"{op._id} was not add. This op is not designed for use with {default_in} columns") 
+                warnings.warn(
+                    f"{op._id} was not add. This op is not designed for use with {default_in} columns"
+                )
                 operators.remove(op)
-        
-        
+
     def add_feature(self, operators):
         self.config_add_ops(operators, "FE")
-        
+
     def add_cat_feature(self, operators):
-        self.op_default_check(operators, 'categorical')
+        self.op_default_check(operators, "categorical")
         if operators:
             self.add_feature(operators)
-        
+
     def add_cont_feature(self, operators):
-        self.op_default_check(operators, 'continuous')
+        self.op_default_check(operators, "continuous")
         if operators:
             self.add_feature(operators)
-    
+
     def add_cat_preprocess(self, operators):
-        self.op_default_check(operators, 'categorical')
+        self.op_default_check(operators, "categorical")
         if operators:
             self.add_preprocess(operators)
-        
+
     def add_cont_preprocess(self, operators):
-        self.op_default_check(operators, 'continuous')
+        self.op_default_check(operators, "continuous")
         if operators:
             self.add_preprocess(operators)
-        
 
     def add_preprocess(self, operators):
         """
@@ -460,11 +466,11 @@ class Workflow:
             else:
                 final["label"] = final["label"] + col_ctx
         # if no operators run in preprocessing we grab base columns
-        if not 'continuous' in final:
+        if not "continuous" in final:
             # set base columns
-            final['continuous'] = self.columns_ctx['continuous']['base']
-        if not 'categorical' in final:
-            final['categorical'] = self.columns_ctx['categorical']['base']
+            final["continuous"] = self.columns_ctx["continuous"]["base"]
+        if not "categorical" in final:
+            final["categorical"] = self.columns_ctx["categorical"]["base"]
         self.columns_ctx["final"] = {}
         self.columns_ctx["final"]["ctx"] = final
 
@@ -585,27 +591,35 @@ class Workflow:
         return gdf, run_stat_ops
 
     # run phase
-    def exec_phase(self, itr, phase_index, export_path=None, record_stats=True, shuffler=None, num_out_files=None):
+    def exec_phase(
+        self,
+        itr,
+        phase_index,
+        export_path=None,
+        record_stats=True,
+        shuffler=None,
+        num_out_files=None,
+    ):
         """ 
         Gather necessary column statistics in single pass. 
         Execute one phase only, given by phase index
         """
-        stat_ops_ran=[]
+        stat_ops_ran = []
         for gdf in itr:
             # run all previous phases to get df to correct state
             start = time.time()
             for i in range(phase_index):
-                gdf, _ = self.run_ops_for_phase(
-                    gdf, self.phases[i], record_stats=False
-                )
-            self.timings['preproc_reapply'] += time.time() - start
+                gdf, _ = self.run_ops_for_phase(gdf, self.phases[i], record_stats=False)
+            self.timings["preproc_reapply"] += time.time() - start
             start = time.time()
             gdf, stat_ops_ran = self.run_ops_for_phase(
                 gdf, self.phases[phase_index], record_stats=record_stats
             )
-            self.timings['preproc_apply'] += time.time() - start
-            if export_path and phase_index == len(self.phases) -1:
-                self.write_df(gdf, export_path, shuffler=shuffler, num_out_files=num_out_files)
+            self.timings["preproc_apply"] += time.time() - start
+            if export_path and phase_index == len(self.phases) - 1:
+                self.write_df(
+                    gdf, export_path, shuffler=shuffler, num_out_files=num_out_files
+                )
         #                 pdb.set_trace()
         # if export is activated combine as many GDFs as possible and
         # then write them out cudf.concat([exp_gdf, gdf], axis=0)
@@ -614,8 +628,15 @@ class Workflow:
             # missing bubble up to prerprocessor
         self.get_stats()
 
-
-    def apply(self, dataset, apply_offline=True, record_stats=True, shuffle=False, output_path='./ds_export', num_out_files=None):
+    def apply(
+        self,
+        dataset,
+        apply_offline=True,
+        record_stats=True,
+        shuffle=False,
+        output_path="./ds_export",
+        num_out_files=None,
+    ):
         # if no tasks have been loaded then we need to load internal config\
         shuffler = None
         if not self.phases:
@@ -623,24 +644,58 @@ class Workflow:
         if shuffle:
             shuffler = Shuffler()
         if apply_offline:
-            self.update_stats(dataset, output_path=output_path, record_stats=record_stats, shuffler=shuffler, num_out_files=num_out_files)
+            self.update_stats(
+                dataset,
+                output_path=output_path,
+                record_stats=record_stats,
+                shuffler=shuffler,
+                num_out_files=num_out_files,
+            )
         else:
-            self.apply_ops(dataset, output_path=output_path, record_stats=record_stats, shuffler=shuffler, num_out_files=num_out_files)
+            self.apply_ops(
+                dataset,
+                output_path=output_path,
+                record_stats=record_stats,
+                shuffler=shuffler,
+                num_out_files=num_out_files,
+            )
         if shuffle:
             shuffler.close_writers()
             # assumes we are using parquet always with in the preprocessor
             start = time.time()
             shuffler.shuffle(output_path)
-            self.timings['shuffle_fin'] += time.time() - start
-    
-    
-    def update_stats(self, itr, end_phase=None, output_path=None, record_stats=True, shuffler=None, num_out_files=None):
+            self.timings["shuffle_fin"] += time.time() - start
+
+    def update_stats(
+        self,
+        itr,
+        end_phase=None,
+        output_path=None,
+        record_stats=True,
+        shuffler=None,
+        num_out_files=None,
+    ):
         end = end_phase if end_phase else len(self.phases)
         for idx, _ in enumerate(self.phases[:end]):
-            self.exec_phase(itr, idx, export_path=output_path, record_stats=record_stats, shuffler=shuffler, num_out_files=num_out_files)
+            self.exec_phase(
+                itr,
+                idx,
+                export_path=output_path,
+                record_stats=record_stats,
+                shuffler=shuffler,
+                num_out_files=num_out_files,
+            )
 
-
-    def apply_ops(self, gdf, start_phase=None, end_phase=None, record_stats=False, shuffler=None, output_path=None, num_out_files=None):
+    def apply_ops(
+        self,
+        gdf,
+        start_phase=None,
+        end_phase=None,
+        record_stats=False,
+        shuffler=None,
+        output_path=None,
+        num_out_files=None,
+    ):
         """
         gdf: cudf dataframe
         record_stats: bool; run stats recording within run
@@ -657,23 +712,24 @@ class Workflow:
             gdf, stat_ops_ran = self.run_ops_for_phase(
                 gdf, self.phases[phase_index], record_stats=record_stats
             )
-            self.timings['preproc_apply'] += time.time() - start
+            self.timings["preproc_apply"] += time.time() - start
             if phase_index == len(self.phases) - 1 and output_path:
-                self.write_df(gdf, output_path, shuffler=shuffler, num_out_files=num_out_files)
+                self.write_df(
+                    gdf, output_path, shuffler=shuffler, num_out_files=num_out_files
+                )
         return gdf
 
-    
     def write_df(self, gdf, export_path, shuffler, num_out_files):
         if shuffler:
             start = time.time()
             shuffler.stripe_df(gdf, export_path, num_out_files)
-            self.timings['shuffle_df'] += time.time() - start
+            self.timings["shuffle_df"] += time.time() - start
         else:
-            file_name = f"{uuid.uuid4().hex}.parquet"
+            file_name = f"{self.current_file_num}.parquet"
             path = os.path.join(export_path, file_name)
             gdf.to_parquet(path)
-    
-        
+            self.current_file_num += 1
+
     def get_stats(self):
         for name, stat_op in self.stat_ops.items():
             stat_vals = stat_op.stats_collected()
@@ -689,9 +745,7 @@ class Workflow:
         stats_drop["encoders"] = {}
         encoders = self.stats.get("encoders", {})
         for name, enc in encoders.items():
-            stats_drop["encoders"][name] = (
-                enc.get_cats().values_to_string(),
-            )
+            stats_drop["encoders"][name] = (enc.get_cats().values_to_string(),)
         for name, stat in self.stats.items():
             if name not in stats_drop.keys():
                 stats_drop[name] = stat
@@ -703,7 +757,7 @@ class Workflow:
             tasks.append([task[0]._id, task[1], task[2], [x._id for x in task[3]]])
             op = self.find_op(task[0]._id)
             op_args[op._id] = op.__dict__
-        main_obj['op_args'] = op_args
+        main_obj["op_args"] = op_args
         main_obj["tasks"] = tasks
         with open(path, "w") as outfile:
             yaml.dump(main_obj, outfile, default_flow_style=False)
@@ -716,13 +770,13 @@ class Workflow:
         with open(path, "r") as infile:
             main_obj = yaml.load(infile)
             _set_stats(self, main_obj["stats"])
-            self.master_task_list = self.recreate_master_task_list(main_obj["tasks"], main_obj["op_args"])
+            self.master_task_list = self.recreate_master_task_list(
+                main_obj["tasks"], main_obj["op_args"]
+            )
             self.columns_ctx = main_obj["columns_ctx"]
         encoders = self.stats.get("encoders", {})
         for col, cats in encoders.items():
-            self.stats["encoders"][col] = DLLabelEncoder(
-                col, cats=cudf.Series(cats[0])
-            )
+            self.stats["encoders"][col] = DLLabelEncoder(col, cats=cudf.Series(cats[0]))
         self.reg_all_ops(self.master_task_list)
 
     def clear_stats(self):
@@ -735,7 +789,7 @@ class Workflow:
 
     def ds_to_tensors(self, itr, apply_ops=True):
         return create_tensors(self, itr=itr, apply_ops=apply_ops)
-    
+
     def recreate_master_task_list(self, task_list, op_args):
         master_list = []
         for task in task_list:
@@ -747,7 +801,6 @@ class Workflow:
             dep_ops = []
             for ops_id in dep_ids:
                 dep_ops.append(all_ops[ops_id]())
-                
+
             master_list.append((op, main_grp, sub_cols, dep_ops))
         return master_list
-    

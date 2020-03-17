@@ -347,8 +347,15 @@ class Encoder(StatOperator):
     encoders = {}
     categories = {}
 
-    def __init__(self, use_frequency=False, freq_threshold=0, limit_frac=0.5, 
-                 gpu_mem_util_limit = 0.5, gpu_mem_trans_use = 0.5, columns=None):
+    def __init__(
+        self,
+        use_frequency=False,
+        freq_threshold=0,
+        limit_frac=0.5,
+        gpu_mem_util_limit=0.5,
+        gpu_mem_trans_use=0.5,
+        columns=None,
+    ):
 
         super(Encoder, self).__init__(columns)
         self.use_frequency = use_frequency
@@ -356,7 +363,7 @@ class Encoder(StatOperator):
         self.limit_frac = limit_frac
         self.gpu_mem_util_limit = gpu_mem_util_limit
         self.gpu_mem_trans_use = gpu_mem_trans_use
-        
+
     def apply_op(
         self, gdf: cudf.DataFrame, columns_ctx: dict, input_cols, target_cols="base"
     ):
@@ -368,13 +375,19 @@ class Encoder(StatOperator):
         for name in cols:
             if not name in self.encoders:
                 if self.use_frequency:
-                    threshold_freq = self.freq_threshold.get(name, 0) if type(self.freq_threshold) is dict else self.freq_threshold
-                    self.encoders[name] = DLLabelEncoder(name, 
-                                                         use_frequency=self.use_frequency,
-                                                         limit_frac=self.limit_frac, 
-                                                         gpu_mem_util_limit = self.gpu_mem_util_limit,
-                                                         gpu_mem_trans_use = self.gpu_mem_trans_use, # This one is used during transform
-                                                         freq_threshold=threshold_freq)
+                    threshold_freq = (
+                        self.freq_threshold.get(name, 0)
+                        if type(self.freq_threshold) is dict
+                        else self.freq_threshold
+                    )
+                    self.encoders[name] = DLLabelEncoder(
+                        name,
+                        use_frequency=self.use_frequency,
+                        limit_frac=self.limit_frac,
+                        gpu_mem_util_limit=self.gpu_mem_util_limit,
+                        gpu_mem_trans_use=self.gpu_mem_trans_use,  # This one is used during transform
+                        freq_threshold=threshold_freq,
+                    )
                 else:
                     self.encoders[name] = DLLabelEncoder(name)
 
@@ -553,9 +566,17 @@ class Categorify(DFOperator):
     default_in = CAT
     default_out = CAT
 
-    def __init__(self, use_frequency=False, freq_threshold=0, limit_frac=0.5, 
-                 gpu_mem_util_limit=0.5, gpu_mem_trans_use=0.5, columns=None,
-                 preprocessing=True, replace=True):
+    def __init__(
+        self,
+        use_frequency=False,
+        freq_threshold=0,
+        limit_frac=0.5,
+        gpu_mem_util_limit=0.5,
+        gpu_mem_trans_use=0.5,
+        columns=None,
+        preprocessing=True,
+        replace=True,
+    ):
         super().__init__(columns=columns, preprocessing=preprocessing, replace=replace)
         self.use_frequency = use_frequency
         self.freq_threshold = freq_threshold
@@ -565,9 +586,15 @@ class Categorify(DFOperator):
 
     @property
     def req_stats(self):
-        return [Encoder(use_frequency=self.use_frequency, freq_threshold=self.freq_threshold, 
-                        limit_frac=self.limit_frac, gpu_mem_util_limit=self.gpu_mem_util_limit,
-                        gpu_mem_trans_use=self.gpu_mem_trans_use)]
+        return [
+            Encoder(
+                use_frequency=self.use_frequency,
+                freq_threshold=self.freq_threshold,
+                limit_frac=self.limit_frac,
+                gpu_mem_util_limit=self.gpu_mem_util_limit,
+                gpu_mem_trans_use=self.gpu_mem_trans_use,
+            )
+        ]
 
     def op_logic(self, gdf: cudf.DataFrame, target_columns: list, stats_context=None):
         cat_names = target_columns
