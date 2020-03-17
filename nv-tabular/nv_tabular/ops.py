@@ -42,8 +42,6 @@ class Operator:
 
 
 class TransformOperator(Operator):
-    preprocessing = False
-    replace = True
     default_in = None
     default_out = None
 
