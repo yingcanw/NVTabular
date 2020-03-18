@@ -588,7 +588,7 @@ class Workflow:
         Gather necessary column statistics in single pass. 
         Execute one phase only, given by phase index
         """
-        
+        print("Phase:", phase_index)
         stat_ops_ran=[]
         for gdf in itr:
             # run all previous phases to get df to correct state
@@ -603,20 +603,9 @@ class Workflow:
             if export_path and shuffler and phase_index == len(self.phases) - 1:
                 shuffler.add_data(gdf, export_path, num_out_files)
 
-            #if export_path and not self.file_create_started and phase_index == len(self.phases) - 1:
-            #    self.file_create_started = True
-            #    shuffler.start_writers(gdf, export_path, num_out_files)
-
-            #if export_path and phase_index == len(self.phases) -1:
-            #    self.write_df(gdf, export_path, shuffler=shuffler, num_out_files=num_out_files)
-
-        #                 pdb.set_trace()
-        # if export is activated combine as many GDFs as possible and
-        # then write them out cudf.concat([exp_gdf, gdf], axis=0)
-
         for stat_op in stat_ops_ran:
             stat_op.read_fin()
-            # missing bubble up to prerprocessor
+
         self.get_stats()
 
     def apply(self, dataset, apply_offline=True, record_stats=True, shuffle=False, output_path='./ds_export', num_out_files=None):
@@ -633,8 +622,6 @@ class Workflow:
             self.apply_ops(dataset, output_path=output_path, record_stats=record_stats, shuffler=shuffler, num_out_files=num_out_files)
         if shuffle:
             shuffler.close_writers()
-            # assumes we are using parquet always with in the preprocessor
-            # shuffler.shuffle(output_path)
     
     def update_stats(self, itr, end_phase=None, output_path=None, record_stats=True, shuffler=None, num_out_files=None):
         end = end_phase if end_phase else len(self.phases)
@@ -659,18 +646,8 @@ class Workflow:
                 gdf, self.phases[phase_index], record_stats=record_stats
             )
             if phase_index == len(self.phases) - 1 and output_path:
-                self.write_df(gdf, output_path, shuffler=shuffler, num_out_files=num_out_files)
+                shuffler.add_data(gdf, output_path, num_out_files)
         return gdf
-
-    
-    def write_df(self, gdf, export_path, shuffler, num_out_files):
-        if shuffler:
-            shuffler.stripe_df(gdf, export_path, num_out_files)
-        else:
-            file_name = f"{uuid.uuid4().hex}.parquet"
-            path = os.path.join(export_path, file_name)
-            gdf.to_parquet(path)
-    
         
     def get_stats(self):
         for name, stat_op in self.stat_ops.items():
