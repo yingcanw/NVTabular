@@ -12,6 +12,7 @@ ALL = "all"
 
 
 class Operator:
+    columns = None
 
     def __init__(self, columns=columns):
         self.columns = columns
@@ -82,7 +83,7 @@ class TransformOperator(Operator):
         if not pro:
             input_cols = self.default_out
         columns_ctx[input_cols][new_key] = []
-        if self.replace:
+        if self.replace and self.preprocessing:
             # not making new columns instead using old ones
             # must reference original target with new operator for chaining
             columns_ctx[input_cols][new_key] = origin_targets
@@ -112,7 +113,7 @@ class TransformOperator(Operator):
     def assemble_new_df(self, origin_gdf, new_gdf, target_columns):
         if not new_gdf:
             return origin_gdf
-        if self.replace:
+        if self.replace and self.preprocessing and target_columns:
             origin_gdf[target_columns] = new_gdf
             return origin_gdf
         return cudf.concat([origin_gdf, new_gdf], axis=1)
@@ -514,7 +515,7 @@ class FillMissing(DFOperator):
         add_col=False,
         columns=None,
         preprocessing=True,
-        replace=False,
+        replace=True,
         default_in=None,
         default_out=None,
     ):
