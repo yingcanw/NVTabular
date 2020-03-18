@@ -660,9 +660,8 @@ class Workflow:
                 num_out_files=num_out_files,
             )
         if shuffle:
-            shuffler.close_writers()
-            # assumes we are using parquet always with in the preprocessor
             start = time.time()
+            shuffler.close_writers()            
             self.timings["shuffle_fin"] += time.time() - start
 
     def update_stats(
