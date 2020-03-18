@@ -588,7 +588,6 @@ class Workflow:
         Gather necessary column statistics in single pass. 
         Execute one phase only, given by phase index
         """
-        print("Phase:", phase_index)
         stat_ops_ran=[]
         for gdf in itr:
             # run all previous phases to get df to correct state
