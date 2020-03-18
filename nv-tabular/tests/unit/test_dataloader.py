@@ -85,15 +85,15 @@ def test_shuffle_gpu(tmpdir, datasets, engine):
     else:
         df1 = cudf.read_csv(paths[0], header=False, names=allcols_csv)[mycols_csv]
     shuf = ds.Shuffler()
-    #     shuf.writers = []
-    shuf.stripe_df(df1, tmpdir, num_files)
+    shuf.add_data(df1, tmpdir, num_files)
+    writer_files = shuf.writer_files
     shuf.close_writers()
     if engine == "parquet":
-        df3 = cudf.read_parquet(shuf.writer_files[0])[mycols_pq]
-        df4 = cudf.read_parquet(shuf.writer_files[1])[mycols_pq]
+        df3 = cudf.read_parquet(writer_files[0])[mycols_pq]
+        df4 = cudf.read_parquet(writer_files[1])[mycols_pq]
     else:
-        df3 = cudf.read_parquet(shuf.writer_files[0])[mycols_csv]
-        df4 = cudf.read_parquet(shuf.writer_files[1])[mycols_csv]
+        df3 = cudf.read_parquet(writer_files[0])[mycols_csv]
+        df4 = cudf.read_parquet(writer_files[1])[mycols_csv]
     assert df1.shape[0] == df3.shape[0] + df4.shape[0]
 
 

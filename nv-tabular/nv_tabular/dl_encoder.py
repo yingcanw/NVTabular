@@ -9,7 +9,8 @@ import os
 import psutil
 import uuid
 import cupy as cp
-from cudf.utils import cudautils
+
+
 from cudf.utils.dtypes import (
     is_categorical_dtype,
     is_datetime_dtype,
