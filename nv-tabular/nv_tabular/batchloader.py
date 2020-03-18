@@ -82,7 +82,6 @@ class TensorItr:
         self.tensors = [tensor[idx] for tensor in self.tensors]
 
 
-        
 def _to_tensor(gdf: cudf.DataFrame, dtype, tensor_list, to_cpu=False):
     if gdf.empty:
         return
@@ -92,12 +91,11 @@ def _to_tensor(gdf: cudf.DataFrame, dtype, tensor_list, to_cpu=False):
         t = from_dlpack(g).type(dtype)
         t = t.to(torch.device("cpu")) if to_cpu else t
         tensor_list[column] = (
-            t
-            if column not in tensor_list
-            else torch.cat([tensor_list[column], t])
+            t if column not in tensor_list else torch.cat([tensor_list[column], t])
         )
         del g
-        
+
+
 def create_tensors(preproc, itr=None, gdf=None, apply_ops=True):
     cats, conts, label = {}, {}, {}
     if itr:
@@ -107,10 +105,7 @@ def create_tensors(preproc, itr=None, gdf=None, apply_ops=True):
         process_one_df(gdf, preproc, cats, conts, label, apply_ops=apply_ops)
 
     cats_list = (
-        [
-            cats[x]
-            for x in sorted(cats.keys(), key=lambda entry: entry.split("_")[0])
-        ]
+        [cats[x] for x in sorted(cats.keys(), key=lambda entry: entry.split("_")[0])]
         if cats
         else None
     )
@@ -125,7 +120,7 @@ def create_tensors(preproc, itr=None, gdf=None, apply_ops=True):
 
 
 def get_final_cols(preproc):
-    if not 'cols' in preproc.columns_ctx['final']:
+    if not "cols" in preproc.columns_ctx["final"]:
         preproc.create_final_cols()
     cat_names = sorted(
         preproc.columns_ctx["final"]["cols"]["categorical"],
@@ -135,10 +130,11 @@ def get_final_cols(preproc):
     label_name = sorted(preproc.columns_ctx["final"]["cols"]["label"])
     return cat_names, cont_names, label_name
 
+
 def process_one_df(gdf, preproc, cats, conts, label, apply_ops=True):
     if apply_ops:
         gdf = preproc.apply_ops(gdf)
-    
+
     cat_names, cont_names, label_name = get_final_cols(preproc)
 
     gdf_cats, gdf_conts, gdf_label = (
@@ -156,28 +152,18 @@ def process_one_df(gdf, preproc, cats, conts, label, apply_ops=True):
         _to_tensor(gdf_label, torch.float32, label, to_cpu=preproc.to_cpu)
 
 
-
 class DLCollator:
     transform = None
     preproc = None
     apply_ops = True
 
-
-    def __init__(
-        self,
-        transform=create_tensors,
-        preproc=None,
-        apply_ops=True
-    ):
+    def __init__(self, transform=create_tensors, preproc=None, apply_ops=True):
         self.transform = transform
         self.preproc = preproc
         self.apply_ops = apply_ops
 
-
     def gdf_col(self, gdf):
-        batch = self.transform(
-            self.preproc, gdf=gdf[0], apply_ops=self.apply_ops
-        )
+        batch = self.transform(self.preproc, gdf=gdf[0], apply_ops=self.apply_ops)
         return (batch[0], batch[1]), batch[2].long()
 
 

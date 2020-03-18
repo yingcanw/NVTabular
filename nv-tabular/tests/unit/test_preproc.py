@@ -166,17 +166,17 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         return gdf
 
     assert math.isclose(
-        get_norms(df.x).mean(), processor.stats["means"]["x_ZeroFill"], rel_tol=1e-4
+        get_norms(df.x).mean(), processor.stats["means"]["x"], rel_tol=1e-4
     )
     assert math.isclose(
-        get_norms(df.y).mean(), processor.stats["means"]["y_ZeroFill"], rel_tol=1e-4
+        get_norms(df.y).mean(), processor.stats["means"]["y"], rel_tol=1e-4
     )
     #     assert math.isclose(get_norms(df.id).mean(), processor.stats["means"]["id_ZeroFill_LogOp"], rel_tol=1e-4)
     assert math.isclose(
-        get_norms(df.x).std(), processor.stats["stds"]["x_ZeroFill"], rel_tol=1e-3
+        get_norms(df.x).std(), processor.stats["stds"]["x"], rel_tol=1e-3
     )
     assert math.isclose(
-        get_norms(df.y).std(), processor.stats["stds"]["y_ZeroFill"], rel_tol=1e-3
+        get_norms(df.y).std(), processor.stats["stds"]["y"], rel_tol=1e-3
     )
     #     assert math.isclose(get_norms(df.id).std(), processor.stats["stds"]["id_ZeroFill_LogOp"], rel_tol=1e-3)
 
@@ -207,8 +207,8 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
         df_pp = cudf.concat([df_pp, chunk], axis=0) if df_pp else chunk
 
     if engine == "parquet":
-        assert df_pp["name-cat_Categorify"].dtype == "int64"
-    assert df_pp["name-string_Categorify"].dtype == "int64"
+        assert df_pp["name-cat"].dtype == "int64"
+    assert df_pp["name-string"].dtype == "int64"
 
     num_rows, num_row_groups, col_names = cudf.io.read_parquet_metadata(
         str(tmpdir) + "/_metadata"
@@ -217,53 +217,53 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine):
     return processor.ds_exports
 
 
-@cleanup
-def test_pq_to_pq_processed(tmpdir, datasets):
-    indir = str(datasets["parquet"])
-    outdir = str(tmpdir)
-    cat_names = ["name-cat", "name-string"]
-    columns = mycols_pq
-    cont_names = ["x", "y", "id"]
-    label_name = ["label"]
-    chunk_size = 100
+# @cleanup
+# def test_pq_to_pq_processed(tmpdir, datasets):
+#     indir = str(datasets["parquet"])
+#     outdir = str(tmpdir)
+#     cat_names = ["name-cat", "name-string"]
+#     columns = mycols_pq
+#     cont_names = ["x", "y", "id"]
+#     label_name = ["label"]
+#     chunk_size = 100
 
-    config = pp.get_new_config()
-    config["FE"]["continuous"] = [[ops.FillMissing(), ops.LogOp()]]
-    config["PP"]["continuous"] = [[ops.LogOp(), ops.Normalize()]]
-    config["PP"]["categorical"] = [ops.Categorify()]
+#     config = pp.get_new_config()
+#     config["FE"]["continuous"] = [[ops.FillMissing(), ops.LogOp()]]
+#     config["PP"]["continuous"] = [[ops.LogOp(), ops.Normalize()]]
+#     config["PP"]["categorical"] = [ops.Categorify()]
 
-    processor = pp.Workflow(
-        cat_names=cat_names,
-        cont_names=cont_names,
-        label_name=label_name,
-        config=config,
-        to_cpu=True,
-    )
+#     processor = pp.Workflow(
+#         cat_names=cat_names,
+#         cont_names=cont_names,
+#         label_name=label_name,
+#         config=config,
+#         to_cpu=True,
+#     )
 
-    paths = [os.path.join(indir, x) for x in os.listdir(indir) if x.endswith("parquet")]
+#     paths = [os.path.join(indir, x) for x in os.listdir(indir) if x.endswith("parquet")]
 
-    data_itr = ds.GPUDatasetIterator(paths, use_row_groups=True,)
+#     data_itr = ds.GPUDatasetIterator(paths, use_row_groups=True,)
 
-    processor.update_stats(data_itr)
-    #     processor.load_stats(sample_stats)
-    processor.pq_to_pq_processed(
-        indir,
-        outdir,
-        columns=mycols_pq,
-        shuffle=True,
-        apply_ops=True,
-        chunk_size=chunk_size,
-    )
+#     processor.update_stats(data_itr)
+#     #     processor.load_stats(sample_stats)
+#     processor.pq_to_pq_processed(
+#         indir,
+#         outdir,
+#         columns=mycols_pq,
+#         shuffle=True,
+#         apply_ops=True,
+#         chunk_size=chunk_size,
+#     )
 
-    # TODO: Test that the new parquet dataset is processed correctly
-    old_paths = glob.glob(indir + "/*.parquet")
-    new_paths = glob.glob(outdir + "/*.parquet")
-    assert len(new_paths) == len(old_paths)
+#     # TODO: Test that the new parquet dataset is processed correctly
+#     old_paths = glob.glob(indir + "/*.parquet")
+#     new_paths = glob.glob(outdir + "/*.parquet")
+#     assert len(new_paths) == len(old_paths)
 
-    meta = cudf.io.read_parquet_metadata(outdir + "/_metadata")
-    assert all(x in meta[2] for x in mycols_pq)
-    assert meta[0] // meta[1] <= chunk_size
-    return processor.ds_exports
+#     meta = cudf.io.read_parquet_metadata(outdir + "/_metadata")
+#     assert all(x in meta[2] for x in mycols_pq)
+#     assert meta[0] // meta[1] <= chunk_size
+#     return processor.ds_exports
 
 
 # This test was removed because the functionality was taken out
@@ -421,8 +421,8 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine, rep
         df_pp = cudf.concat([df_pp, chunk], axis=0) if df_pp else chunk
 
     if engine == "parquet":
-        assert df_pp["name-cat_Categorify"].dtype == "int64"
-    assert df_pp["name-string_Categorify"].dtype == "int64"
+        assert df_pp["name-cat"].dtype == "int64"
+    assert df_pp["name-string"].dtype == "int64"
 
     num_rows, num_row_groups, col_names = cudf.io.read_parquet_metadata(
         str(tmpdir) + "/_metadata"
@@ -493,22 +493,22 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine, op_col
     if not op_columns:
         assert math.isclose(
             get_norms(df.y).mean(),
-            processor.stats["means"]["y_ZeroFill_LogOp"],
+            processor.stats["means"]["y"],
             rel_tol=1e-1,
         )
         assert math.isclose(
             get_norms(df.y).std(),
-            processor.stats["stds"]["y_ZeroFill_LogOp"],
+            processor.stats["stds"]["y"],
             rel_tol=1e-1,
         )
     assert math.isclose(
         get_norms(df.x).mean(),
-        processor.stats["means"]["x_ZeroFill_LogOp"],
+        processor.stats["means"]["x"],
         rel_tol=1e-1,
     )
     assert math.isclose(
         get_norms(df.x).std(),
-        processor.stats["stds"]["x_ZeroFill_LogOp"],
+        processor.stats["stds"]["x"],
         rel_tol=1e-1,
     )
 
@@ -539,8 +539,8 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine, op_col
         df_pp = cudf.concat([df_pp, chunk], axis=0) if df_pp else chunk
 
     if engine == "parquet":
-        assert df_pp["name-cat_Categorify"].dtype == "int64"
-    assert df_pp["name-string_Categorify"].dtype == "int64"
+        assert df_pp["name-cat"].dtype == "int64"
+    assert df_pp["name-string"].dtype == "int64"
 
     num_rows, num_row_groups, col_names = cudf.io.read_parquet_metadata(
         str(tmpdir) + "/_metadata"

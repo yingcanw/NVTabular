@@ -1,8 +1,11 @@
 *.pyc
-.ipynb_checkpoints/*
+*/.ipynb_checkpoints/*
+/.*_checkpoints/
+*.ipynb_checkpoints/*
 cache/*
 data*/*
 *.parquet
 *.orc
 *.csv
 dist/*
+*/build/*
