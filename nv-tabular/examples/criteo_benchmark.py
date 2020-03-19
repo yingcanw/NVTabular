@@ -19,11 +19,13 @@ def parse_args():
     parser.add_argument(
         "gpu_mem_frac", help="size of gpu to allot to the dataset iterator"
     )
+    parser.add_argument("--shuffle", required=False, help="bool value to activate shuffling of processed dataset")
     return parser.parse_args()
 
 
 args = parse_args()
 print(args)
+shuffle_arg = True if args.shuffle else False 
 GPU_id = args.gpu_id
 os.environ["CUDA_VISIBLE_DEVICES"] = str(GPU_id)
 
@@ -155,22 +157,27 @@ print("Running apply")
 out_train = os.path.join(args.out_dir, "train")
 out_valid = os.path.join(args.out_dir, "valid")
 
+start = time()
 proc.apply(
     trains_itrs,
     apply_offline=True,
     record_stats=True,
-    shuffle=False,
+    shuffle=shuffle_arg,
     output_path=out_train,
     num_out_files=len(train_set),
 )
+print(f"train preprocess time: {time() - start}")
+
+start = time()
 proc.apply(
     valids_itrs,
     apply_offline=True,
     record_stats=False,
-    shuffle=False,
+    shuffle=shuffle_arg,
     output_path=out_valid,
     num_out_files=len(valid_set),
 )
+print(f"valid preprocess time: {time() - start}")
 print(proc.timings)
 
 embeddings = [

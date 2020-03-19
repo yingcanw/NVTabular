@@ -29,11 +29,9 @@ pages:
   tags:
   - RapidsDL
   script:
-    - mkdir .public
-    - cp -r nv-tabular/build/html/ .public
-    - mv .public public
+    - cd nv-tabular/docs/
+    - make html
+    - cp -r build/html/ public
   artifacts:
     paths:
       - public
-  only:
-    - master
