@@ -34,7 +34,7 @@ pages:
     - make html
     - ls
     - ls build/html/
-    - ls public
+    - ls ../../public
     - cp -r build/html/* ../../public
     - ls ../../public
   artifacts:
