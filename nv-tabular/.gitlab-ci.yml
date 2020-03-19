@@ -36,7 +36,7 @@ pages:
     - ls build/html/
     - ls public
     - cp -r build/html/* ../../public
-    - ls public
+    - ls ../../public
   artifacts:
     paths:
       - public
