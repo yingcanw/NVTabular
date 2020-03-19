@@ -29,12 +29,13 @@ pages:
   tags:
   - RapidsDL
   script:
+    - mkdir public
     - cd nv-tabular/docs/
     - make html
     - ls
     - ls build/html/
     - ls public
-    - cp -r build/html/* public
+    - cp -r build/html/* ../../public
     - ls public
   artifacts:
     paths:
