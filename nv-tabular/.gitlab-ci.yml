@@ -31,7 +31,7 @@ pages:
   script:
     - mkdir public
     - docker run --runtime=nvidia --rm -p 48888:8888 -p 48787:8787 -p 48786:8786 -p 43000:3000 --ipc=host --name dev_tip_test -v $(pwd):/rapidsdl/ gitlab-master.nvidia.com:5005/rapidsdl/docker/rapidsdl_nite:latest /bin/bash -c "source activate rapids && cd /rapidsdl/nv-tabular/docs/ && make html"
-    - cp -r build/html/* ../../public
+    - cp -r nv-tabular/docs/build/html/* public
   artifacts:
     paths:
       - public
