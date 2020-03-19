@@ -1,4 +1,3 @@
-
 [![pipeline status](https://gitlab-master.nvidia.com/rapidsdl/dl-pipe/badges/master/pipeline.svg)](https://gitlab-master.nvidia.com/rapidsdl/dl-pipe/commits/master) 
 [![coverage report](https://gitlab-master.nvidia.com/rapidsdl/dl-pipe/badges/master/coverage.svg)](https://gitlab-master.nvidia.com/rapidsdl/dl-pipe/commits/master)
 

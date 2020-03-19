@@ -11,6 +11,7 @@ services:
 - docker:dind
 
 stages:
+- docs
 - test
 
 test_build:
@@ -21,4 +22,18 @@ test_build:
   - RapidsDL
   script:
   - pwd
-  - cd ds-itr/; docker run --runtime=nvidia --rm -p 48888:8888 -p 48787:8787 -p 48786:8786 -p 43000:3000 --ipc=host --name dev_tip_test -v $(pwd):/rapidsdl/ gitlab-master.nvidia.com:5005/rapidsdl/docker/rapidsdl_nite:latest /bin/bash -c "source activate rapids && cd /rapidsdl/ &&  py.test --cov-config tests/unit/.coveragerc --cov-report term-missing --cov-fail-under 83 --cov=. tests"
+  - cd nv-tabular/; docker run --runtime=nvidia --rm -p 48888:8888 -p 48787:8787 -p 48786:8786 -p 43000:3000 --ipc=host --name dev_tip_test -v $(pwd):/rapidsdl/ gitlab-master.nvidia.com:5005/rapidsdl/docker/rapidsdl_nite:latest /bin/bash -c "source activate rapids && cd /rapidsdl/ &&  py.test --cov-config tests/unit/.coveragerc --cov-report term-missing --cov-fail-under 83 --cov=. tests"
+
+pages:
+  stage: docs
+  tags:
+  - RapidsDL
+  script:
+    - mkdir .public
+    - cp -r nv-tabular/build/html/ .public
+    - mv .public public
+  artifacts:
+    paths:
+      - public
+  only:
+    - master

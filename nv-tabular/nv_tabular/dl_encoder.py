@@ -9,6 +9,7 @@ import os
 import psutil
 import uuid
 import cupy as cp
+
 from cudf.utils.dtypes import (
     is_categorical_dtype,
     is_datetime_dtype,
@@ -17,6 +18,7 @@ from cudf.utils.dtypes import (
     min_scalar_type,
     to_cudf_compatible_scalar,
 )
+
 
 def _enforce_str(y: cudf.Series) -> cudf.Series:
     """
@@ -34,12 +36,22 @@ def _enforce_npint32(y: cudf.Series) -> cudf.Series:
 
 
 class DLLabelEncoder(object):
-    def __init__(self, col, cats=None, path=None, use_frequency=False,
-                 freq_threshold=0, limit_frac=0.1, gpu_mem_util_limit = 0.8, 
-                 cpu_mem_util_limit = 0.8, gpu_mem_trans_use = 0.8, file_paths=None):
+    def __init__(
+        self,
+        col,
+        cats=None,
+        path=None,
+        use_frequency=False,
+        freq_threshold=0,
+        limit_frac=0.1,
+        gpu_mem_util_limit=0.8,
+        cpu_mem_util_limit=0.8,
+        gpu_mem_trans_use=0.8,
+        file_paths=None,
+    ):
 
         # required because cudf.series does not compute bool type
-        self._cats_counts = cudf.Series([]) 
+        self._cats_counts = cudf.Series([])
         self._cats_counts_host = None
         self._cats_host = None
         self._cats_parts = []
@@ -81,21 +93,25 @@ class DLLabelEncoder(object):
 
     def transform(self, y: cudf.Series, unk_idx=0) -> cudf.Series:
         if self._cats_host is None:
-            raise Exception('Encoder was not fit!')
+            raise Exception("Encoder was not fit!")
 
         if len(self._cats_host) == 0:
-            raise Exception('Encoder was not fit!')
+            raise Exception("Encoder was not fit!")
 
         avail_gpu_mem = numba.cuda.current_context().get_memory_info()[0]
-        sub_cats_size = int(avail_gpu_mem * self.gpu_mem_trans_use / self._cats_host.dtype.itemsize)
+        sub_cats_size = int(
+            avail_gpu_mem * self.gpu_mem_trans_use / self._cats_host.dtype.itemsize
+        )
         i = 0
         encoded = None
         while i < len(self._cats_host):
-            sub_cats = cudf.Series(self._cats_host[i:i+sub_cats_size])
+            sub_cats = cudf.Series(self._cats_host[i : i + sub_cats_size])
             if encoded is None:
                 encoded = self.label_encoding(y, sub_cats, na_sentinel=0)
             else:
-                encoded = encoded.add(self.label_encoding(y, sub_cats, na_sentinel=0), fill_value=0)
+                encoded = encoded.add(
+                    self.label_encoding(y, sub_cats, na_sentinel=0), fill_value=0
+                )
             i = i + sub_cats_size
 
         sub_cats = cudf.Series([])
@@ -136,15 +152,21 @@ class DLLabelEncoder(object):
         self._cats_parts.append(y_uniqs.to_pandas())
 
     def fit_unique_finalize(self):
-        y_uniqs = cudf.Series([]) if self._cats_host is None else cudf.from_pandas(self._cats_host)
+        y_uniqs = (
+            cudf.Series([])
+            if self._cats_host is None
+            else cudf.from_pandas(self._cats_host)
+        )
         cats_uniqs_host = []
         for i in range(len(self._cats_parts)):
             y_uniqs_part = cudf.from_pandas(self._cats_parts.pop())
             if y_uniqs.shape[0] == 0:
                 y_uniqs = y_uniqs_part
             else:
-                y_uniqs = y_uniqs.append(y_uniqs_part).unique() # Check merge option as well
-            
+                y_uniqs = y_uniqs.append(
+                    y_uniqs_part
+                ).unique()  # Check merge option as well
+
         cats = cudf.Series([None]).append(y_uniqs)
         cats = cats.unique().reset_index(drop=True)
         self._cats_host = cats.to_pandas()
@@ -164,9 +186,12 @@ class DLLabelEncoder(object):
             else:
                 y_counts = y_counts.add(y_counts_part, fill_value=0)
             series_size_gpu = self.series_size(y_counts)
-            
+
             avail_gpu_mem, gpu_mem_util = self.get_gpu_mem_info()
-            if series_size_gpu > (avail_gpu_mem * self.limit_frac) or gpu_mem_util > self.gpu_mem_util_limit:
+            if (
+                series_size_gpu > (avail_gpu_mem * self.limit_frac)
+                or gpu_mem_util > self.gpu_mem_util_limit
+            ):
                 cats_counts_host.append(y_counts.to_pandas())
                 y_counts = cudf.Series([])
 
@@ -180,11 +205,15 @@ class DLLabelEncoder(object):
                 y_counts_host_temp = cats_counts_host.pop()
                 y_counts_host = y_counts_host.add(y_counts_host_temp, fill_value=0)
 
-            self._cats_host = pd.Series(y_counts_host[y_counts_host >= self.freq_threshold].index)
-            self._cats_host = pd.Series([None]).append(self._cats_host).reset_index(drop=True)
+            self._cats_host = pd.Series(
+                y_counts_host[y_counts_host >= self.freq_threshold].index
+            )
+            self._cats_host = (
+                pd.Series([None]).append(self._cats_host).reset_index(drop=True)
+            )
 
         return self._cats_host.shape[0]
-                
+
     def merge_series(self, compr_a, compr_b):
         df, dg = cudf.DataFrame(), cudf.DataFrame()
         df["l1"] = compr_a.nans_to_nulls().dropna()
@@ -197,7 +226,7 @@ class DLLabelEncoder(object):
         x = cudf.DataFrame()
         x[self.col] = self._cats.unique()
         self.cat_exp_count = self.cat_exp_count + x.shape[0]
-        file_id = str(uuid.uuid4().hex) + '.parquet'
+        file_id = str(uuid.uuid4().hex) + ".parquet"
         tar_file = os.path.join(self.folder_path, file_id)
         x.to_parquet(tar_file)
         self._cats = cudf.Series()
@@ -222,7 +251,7 @@ class DLLabelEncoder(object):
                 if x.endswith("parquet")
                 and x not in self.file_paths + self.ignore_files
             ]
-            if file_paths:             
+            if file_paths:
                 chunks = ds_itr.GPUDatasetIterator(file_paths)
                 for chunk in chunks:
                     compr = self.merge_series(chunk[self.col], compr)

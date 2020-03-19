@@ -1,8 +1,8 @@
 from distutils.core import setup
 
 setup(
-    name="ds_itr",
+    name="nvTabular",
     version="0.1dev",
-    packages=["ds_itr"],
+    packages=["nv_tabular"],
     long_description=open("README.md").read(),
 )

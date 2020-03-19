@@ -240,7 +240,7 @@ class GPUFileIterator:
         dtypes=None,
         names=None,
         row_size=None,
-        **kwargs
+        **kwargs,
     ):
         self.file_path = file_path
         self.engine = _get_read_engine(
@@ -252,7 +252,7 @@ class GPUFileIterator:
             dtypes=dtypes,
             names=names,
             row_size=None,
-            **kwargs
+            **kwargs,
         )
         self.dtypes = dtypes
         self.columns = columns
@@ -344,7 +344,6 @@ class GPUDatasetIterator:
                 path = self.paths[self.next_path_ind]
                 self.next_path_ind += 1
                 self.itr = GPUFileIterator(path, **self.kwargs)
-                
 
 class Shuffler():
 
@@ -414,8 +413,10 @@ class Shuffler():
             self.start_writers(out_dir, num_out_files)
 
         # get slice info
-        int_slice_size = gdf.shape[0] //num_out_files
-        slice_size = int_slice_size if gdf.shape[0] % int_slice_size == 0 else int_slice_size + 1
+        int_slice_size = gdf.shape[0] // num_out_files
+        slice_size = (
+            int_slice_size if gdf.shape[0] % int_slice_size == 0 else int_slice_size + 1
+        )
         if self.b_idxs is None:
             self.b_idxs = np.arange(num_out_files)
         np.random.shuffle(self.b_idxs)
@@ -423,7 +424,7 @@ class Shuffler():
         for x in range(num_out_files):
             start = x * slice_size
             end = start + slice_size
-            #check if end is over length
+            # check if end is over length
             end = end if end <= gdf.shape[0] else gdf.shape[0]
             to_write = gdf.iloc[cp.arange(start, end)]
             b_idx = self.b_idxs[x]
@@ -445,4 +446,3 @@ class Shuffler():
             writer.close()
         self.writers = []
         self.writer_files = []
-            

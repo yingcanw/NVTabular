@@ -40,11 +40,14 @@ def test_gpu_file_iterator_dl(datasets, batch, dskey):
     df_expect = cudf.read_csv(paths[0], header=False, names=names)[mycols_csv]
     df_expect["id"] = df_expect["id"].astype("int64")
     df_itr = cudf.DataFrame()
-    
+
     processor = pp.Workflow(
-        cat_names=["name-string"], cont_names=["x", "y", "id"], label_name=["label"], to_cpu=True,
+        cat_names=["name-string"],
+        cont_names=["x", "y", "id"],
+        label_name=["label"],
+        to_cpu=True,
     )
-    
+
     data_itr = bl.FileItrDataset(
         paths[0],
         engine="csv",
@@ -53,11 +56,9 @@ def test_gpu_file_iterator_dl(datasets, batch, dskey):
         columns=mycols_csv,
         names=names,
     )
-    
+
     data_chain = torch.utils.data.ChainDataset([data_itr])
-    dlc = bl.DLCollator(
-        processor
-    )
+    dlc = bl.DLCollator(processor)
     data_dl = bl.DLDataLoader(
         data_itr, collate_fn=dlc.gdf_col, pin_memory=False, num_workers=0
     )
@@ -73,8 +74,8 @@ def test_gpu_file_iterator_dl(datasets, batch, dskey):
     assert b_size == len(data_chain)
     assert_eq(df_itr.reset_index(drop=True), df_expect.reset_index(drop=True))
 
-    
-@pytest.mark.parametrize("engine", ["csv", "parquet",  "csv-no-header"])    
+
+@pytest.mark.parametrize("engine", ["csv", "parquet", "csv-no-header"])
 def test_shuffle_gpu(tmpdir, datasets, engine):
     num_files = 2
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
@@ -94,8 +95,6 @@ def test_shuffle_gpu(tmpdir, datasets, engine):
         df3 = cudf.read_parquet(writer_files[0])[mycols_csv]
         df4 = cudf.read_parquet(writer_files[1])[mycols_csv]
     assert df1.shape[0] == df3.shape[0] + df4.shape[0]
-
-
 
 
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
@@ -158,22 +157,22 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine, preprocess
 
     assert math.isclose(
         get_norms(df.x).mean(),
-        processor.stats["means"]["x_FillMissing_LogOp"],
+        processor.stats["means"]["x"],
         rel_tol=1e-2,
     )
     assert math.isclose(
         get_norms(df.y).mean(),
-        processor.stats["means"]["y_FillMissing_LogOp"],
+        processor.stats["means"]["y"],
         rel_tol=1e-2,
     )
     assert math.isclose(
         get_norms(df.x).std(),
-        processor.stats["stds"]["x_FillMissing_LogOp"],
+        processor.stats["stds"]["x"],
         rel_tol=1e-2,
     )
     assert math.isclose(
         get_norms(df.y).std(),
-        processor.stats["stds"]["y_FillMissing_LogOp"],
+        processor.stats["stds"]["y"],
         rel_tol=1e-2,
     )
 
@@ -195,7 +194,7 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine, preprocess
     print(cats1)
     assert cats1 == ["None"] + cats_expected1
 
-    # Write to new "shuffled" and "processed" dataset
+#     Write to new "shuffled" and "processed" dataset
     processor.write_to_dataset(
         tmpdir, data_itr, nfiles=10, shuffle=True, apply_ops=True
     )
@@ -206,15 +205,14 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine, preprocess
     if not preprocessing:
         for col in cont_names:
             assert (
-                f"{col}_FillMissing_LogOp"
+                f"{col}_LogOp"
                 in processor.columns_ctx["final"]["cols"]["continuous"]
             )
 
-    dlc = bl.DLCollator(preproc=processor)
+    dlc = bl.DLCollator(preproc=processor, apply_ops=False)
     data_files = [
         bl.FileItrDataset(
             x,
-            columns=columns,
             use_row_groups=True,
             gpu_memory_frac=gpu_memory_frac,
             names=allcols_csv,
@@ -234,13 +232,12 @@ def test_gpu_preproc(tmpdir, datasets, dump, gpu_memory_frac, engine, preprocess
 
     data_itr = ds.GPUDatasetIterator(
         glob.glob(str(tmpdir) + "/ds_part.*.parquet"),
-        columns=columns,
         use_row_groups=True,
         gpu_memory_frac=gpu_memory_frac,
         names=allcols_csv,
     )
 
-    x = processor.ds_to_tensors(data_itr)
+    x = processor.ds_to_tensors(data_itr, apply_ops=False)
 
     num_rows, num_row_groups, col_names = cudf.io.read_parquet_metadata(
         str(tmpdir) + "/_metadata"
