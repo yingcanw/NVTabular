@@ -616,24 +616,34 @@ class Workflow:
                 gdf, self.phases[phase_index], record_stats=record_stats
             )
             self.timings["preproc_apply"] += time.time() - start
-            if export_path and shuffler and phase_index == len(self.phases) - 1:
-                shuffler.add_data(gdf, export_path, num_out_files)
 
+            if export_path and phase_index == len(self.phases) - 1:
+                self.write_df(
+                    gdf, export_path, shuffler=shuffler, num_out_files=num_out_files
+                )
+        #                 pdb.set_trace()
+        # if export is activated combine as many GDFs as possible and
+        # then write them out cudf.concat([exp_gdf, gdf], axis=0)
         for stat_op in stat_ops_ran:
             stat_op.read_fin()
-
+            # missing bubble up to prerprocessor
         self.get_stats()
 
-
-    def apply(self, dataset, apply_offline=True, record_stats=True, shuffle=False, output_path='./ds_export', num_out_files=None):
-        
+    def apply(
+        self,
+        dataset,
+        apply_offline=True,
+        record_stats=True,
+        shuffle=False,
+        output_path="./ds_export",
+        num_out_files=None,
+    ):
         # if no tasks have been loaded then we need to load internal config\
         shuffler = None
         if not self.phases:
             self.finalize()
         if shuffle:
             shuffler = Shuffler()
-            self.file_create_started = False
         if apply_offline:
             self.update_stats(
                 dataset,
@@ -651,7 +661,8 @@ class Workflow:
                 num_out_files=num_out_files,
             )
         if shuffle:
-            shuffler.close_writers()
+            shuffler.close_writers()            
+
 
     def update_stats(
         self,
@@ -701,9 +712,21 @@ class Workflow:
             )
             self.timings["preproc_apply"] += time.time() - start
             if phase_index == len(self.phases) - 1 and output_path:
-                shuffler.add_data(gdf, output_path, num_out_files)
+                self.write_df(
+                    gdf, output_path, shuffler=shuffler, num_out_files=num_out_files
+                )
         return gdf
-        
+
+    def write_df(self, gdf, export_path, shuffler, num_out_files):
+        if shuffler:
+            start = time.time()
+            shuffler.add_data(gdf, export_path, num_out_files)
+            self.timings["shuffle_df"] += time.time() - start
+        else:
+            file_name = f"{self.current_file_num}.parquet"
+            path = os.path.join(export_path, file_name)
+            gdf.to_parquet(path)
+            self.current_file_num += 1
 
     def get_stats(self):
         for name, stat_op in self.stat_ops.items():

@@ -413,8 +413,10 @@ class Shuffler():
             self.start_writers(out_dir, num_out_files)
 
         # get slice info
-        int_slice_size = gdf.shape[0] //num_out_files
-        slice_size = int_slice_size if gdf.shape[0] % int_slice_size == 0 else int_slice_size + 1
+        int_slice_size = gdf.shape[0] // num_out_files
+        slice_size = (
+            int_slice_size if gdf.shape[0] % int_slice_size == 0 else int_slice_size + 1
+        )
         if self.b_idxs is None:
             self.b_idxs = np.arange(num_out_files)
         np.random.shuffle(self.b_idxs)
