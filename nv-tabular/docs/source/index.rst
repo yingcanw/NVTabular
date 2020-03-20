@@ -10,7 +10,9 @@ Welcome to nvTabular's documentation!
    :maxdepth: 2
    :caption: Contents:
 
+.. include:: ../../README.rst
 
+    
 
 Indices and tables
 ==================
