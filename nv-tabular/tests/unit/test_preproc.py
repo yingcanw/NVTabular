@@ -16,6 +16,126 @@ import os
 import shutil
 
 
+
+
+@cleanup
+@pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
+@pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
+@pytest.mark.parametrize("dump", [True, False])
+@pytest.mark.parametrize("op_columns", [["x"], None])
+def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine, op_columns):
+    paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
+
+    if engine == "parquet":
+        df1 = cudf.read_parquet(paths[0])[mycols_pq]
+        df2 = cudf.read_parquet(paths[1])[mycols_pq]
+    else:
+        df1 = cudf.read_csv(paths[0], header=False, names=allcols_csv)[mycols_csv]
+        df2 = cudf.read_csv(paths[1], header=False, names=allcols_csv)[mycols_csv]
+    df = cudf.concat([df1, df2], axis=0)
+    df["id"] = df["id"].astype("int64")
+
+    if engine == "parquet":
+        cat_names = ["name-cat", "name-string"]
+        columns = mycols_pq
+    else:
+        cat_names = ["name-string"]
+        columns = mycols_csv
+    cont_names = ["x", "y", "id"]
+    label_name = ["label"]
+
+    processor = pp.Workflow(
+        cat_names=cat_names, cont_names=cont_names, label_name=label_name, to_cpu=False,
+    )
+
+    processor.add_feature([ops.ZeroFill(columns=op_columns), ops.LogOp()])
+    processor.add_preprocess(ops.Normalize())
+    processor.add_preprocess(ops.Categorify())
+    processor.finalize()
+
+    data_itr = ds.GPUDatasetIterator(
+        paths,
+        columns=columns,
+        use_row_groups=True,
+        gpu_memory_frac=gpu_memory_frac,
+        names=allcols_csv,
+    )
+
+    processor.update_stats(data_itr)
+
+    if dump:
+        config_file = tmpdir + "/temp.yaml"
+        processor.save_stats(config_file)
+        processor.clear_stats()
+        processor.load_stats(config_file)
+
+    def get_norms(tar: cudf.Series):
+        gdf = tar.fillna(0)
+        gdf = gdf * (gdf >= 0).astype("int")
+        gdf = np.log(gdf + 1)
+        return gdf
+
+    # Check mean and std - No good right now we have to add all other changes; Zerofill, Log
+
+    if not op_columns:
+        assert math.isclose(
+            get_norms(df.y).mean(),
+            processor.stats["means"]["y"],
+            rel_tol=1e-1,
+        )
+        assert math.isclose(
+            get_norms(df.y).std(),
+            processor.stats["stds"]["y"],
+            rel_tol=1e-1,
+        )
+    assert math.isclose(
+        get_norms(df.x).mean(),
+        processor.stats["means"]["x"],
+        rel_tol=1e-1,
+    )
+    assert math.isclose(
+        get_norms(df.x).std(),
+        processor.stats["stds"]["x"],
+        rel_tol=1e-1,
+    )
+
+    # Check that categories match
+    if engine == "parquet":
+        cats_expected0 = df["name-cat"].unique().values_to_string()
+        cats0 = processor.stats["encoders"]["name-cat"].get_cats().values_to_string()
+        # adding the None entry as a string because of move from gpu
+        assert cats0 == ["None"] + cats_expected0
+    cats_expected1 = df["name-string"].unique().values_to_string()
+    cats1 = processor.stats["encoders"]["name-string"].get_cats().values_to_string()
+    # adding the None entry as a string because of move from gpu
+    assert cats1 == ["None"] + cats_expected1
+
+    # Write to new "shuffled" and "processed" dataset
+    processor.write_to_dataset(
+        tmpdir, data_itr, nfiles=10, shuffle=True, apply_ops=True
+    )
+
+    data_itr_2 = ds.GPUDatasetIterator(
+        glob.glob(str(tmpdir) + "/ds_part.*.parquet"),
+        use_row_groups=True,
+        gpu_memory_frac=gpu_memory_frac,
+    )
+
+    df_pp = None
+    for chunk in data_itr_2:
+        df_pp = cudf.concat([df_pp, chunk], axis=0) if df_pp else chunk
+
+    if engine == "parquet":
+        assert df_pp["name-cat"].dtype == "int64"
+    assert df_pp["name-string"].dtype == "int64"
+
+    num_rows, num_row_groups, col_names = cudf.io.read_parquet_metadata(
+        str(tmpdir) + "/_metadata"
+    )
+    assert num_rows == len(df_pp)
+    return processor.ds_exports
+
+
 @pytest.mark.parametrize("batch", [0, 100, 1000])
 def test_gpu_file_iterator_parquet(datasets, batch):
     paths = glob.glob(str(datasets["parquet"]) + "/*.parquet")
@@ -431,119 +551,4 @@ def test_gpu_preproc_config(tmpdir, datasets, dump, gpu_memory_frac, engine, rep
     return processor.ds_exports
 
 
-@cleanup
-@pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
-@pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
-@pytest.mark.parametrize("dump", [True, False])
-@pytest.mark.parametrize("op_columns", [["x"], None])
-def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine, op_columns):
-    paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
 
-    if engine == "parquet":
-        df1 = cudf.read_parquet(paths[0])[mycols_pq]
-        df2 = cudf.read_parquet(paths[1])[mycols_pq]
-    else:
-        df1 = cudf.read_csv(paths[0], header=False, names=allcols_csv)[mycols_csv]
-        df2 = cudf.read_csv(paths[1], header=False, names=allcols_csv)[mycols_csv]
-    df = cudf.concat([df1, df2], axis=0)
-    df["id"] = df["id"].astype("int64")
-
-    if engine == "parquet":
-        cat_names = ["name-cat", "name-string"]
-        columns = mycols_pq
-    else:
-        cat_names = ["name-string"]
-        columns = mycols_csv
-    cont_names = ["x", "y", "id"]
-    label_name = ["label"]
-
-    processor = pp.Workflow(
-        cat_names=cat_names, cont_names=cont_names, label_name=label_name, to_cpu=False,
-    )
-
-    processor.add_feature([ops.ZeroFill(columns=op_columns), ops.LogOp()])
-    processor.add_preprocess(ops.Normalize())
-    processor.add_preprocess(ops.Categorify())
-    processor.finalize()
-
-    data_itr = ds.GPUDatasetIterator(
-        paths,
-        columns=columns,
-        use_row_groups=True,
-        gpu_memory_frac=gpu_memory_frac,
-        names=allcols_csv,
-    )
-
-    processor.update_stats(data_itr)
-
-    if dump:
-        config_file = tmpdir + "/temp.yaml"
-        processor.save_stats(config_file)
-        processor.clear_stats()
-        processor.load_stats(config_file)
-
-    def get_norms(tar: cudf.Series):
-        gdf = tar.fillna(0)
-        gdf = gdf * (gdf >= 0).astype("int")
-        gdf = np.log(gdf + 1)
-        return gdf
-
-    # Check mean and std - No good right now we have to add all other changes; Zerofill, Log
-
-    if not op_columns:
-        assert math.isclose(
-            get_norms(df.y).mean(),
-            processor.stats["means"]["y"],
-            rel_tol=1e-1,
-        )
-        assert math.isclose(
-            get_norms(df.y).std(),
-            processor.stats["stds"]["y"],
-            rel_tol=1e-1,
-        )
-    assert math.isclose(
-        get_norms(df.x).mean(),
-        processor.stats["means"]["x"],
-        rel_tol=1e-1,
-    )
-    assert math.isclose(
-        get_norms(df.x).std(),
-        processor.stats["stds"]["x"],
-        rel_tol=1e-1,
-    )
-
-    # Check that categories match
-    if engine == "parquet":
-        cats_expected0 = df["name-cat"].unique().values_to_string()
-        cats0 = processor.stats["encoders"]["name-cat"].get_cats().values_to_string()
-        # adding the None entry as a string because of move from gpu
-        assert cats0 == ["None"] + cats_expected0
-    cats_expected1 = df["name-string"].unique().values_to_string()
-    cats1 = processor.stats["encoders"]["name-string"].get_cats().values_to_string()
-    # adding the None entry as a string because of move from gpu
-    assert cats1 == ["None"] + cats_expected1
-
-    # Write to new "shuffled" and "processed" dataset
-    processor.write_to_dataset(
-        tmpdir, data_itr, nfiles=10, shuffle=True, apply_ops=True
-    )
-
-    data_itr_2 = ds.GPUDatasetIterator(
-        glob.glob(str(tmpdir) + "/ds_part.*.parquet"),
-        use_row_groups=True,
-        gpu_memory_frac=gpu_memory_frac,
-    )
-
-    df_pp = None
-    for chunk in data_itr_2:
-        df_pp = cudf.concat([df_pp, chunk], axis=0) if df_pp else chunk
-
-    if engine == "parquet":
-        assert df_pp["name-cat"].dtype == "int64"
-    assert df_pp["name-string"].dtype == "int64"
-
-    num_rows, num_row_groups, col_names = cudf.io.read_parquet_metadata(
-        str(tmpdir) + "/_metadata"
-    )
-    assert num_rows == len(df_pp)
-    return processor.ds_exports
