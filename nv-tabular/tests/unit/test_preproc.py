@@ -48,9 +48,9 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine, op_col
         cat_names=cat_names, cont_names=cont_names, label_name=label_name, to_cpu=False,
     )
 
-    if op_columns:
+    if op_columns is True:
         processor.add_feature([ops.ZeroFill(columns=['x']), ops.LogOp()])
-    else:
+    if op_columns is False:
         processor.add_feature([ops.ZeroFill(), ops.LogOp()])
     processor.add_preprocess(ops.Normalize())
     processor.add_preprocess(ops.Categorify())
@@ -64,7 +64,7 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine, op_col
         names=allcols_csv,
     )
     
-    processor.apply(data_itr, apply_offline=True, record_stats=True, shuffle=True, output_path=tmpdir, num_out_files=len(paths))
+    processor.apply(data_itr, apply_offline=True, record_stats=True)
 
     if dump:
         config_file = tmpdir + "/temp.yaml"
@@ -80,7 +80,7 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine, op_col
 
     # Check mean and std - No good right now we have to add all other changes; Zerofill, Log
 
-    if not op_columns:
+    if op_columns == False:
         assert math.isclose(
             get_norms(df.y).mean(),
             processor.stats["means"]["y"],
@@ -112,30 +112,6 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine, op_col
     cats1 = processor.stats["encoders"]["name-string"].get_cats().values_to_string()
     # adding the None entry as a string because of move from gpu
     assert cats1 == ["None"] + cats_expected1
-
-    # Write to new "shuffled" and "processed" dataset
-    processor.write_to_dataset(
-        tmpdir, data_itr, nfiles=10, shuffle=True, apply_ops=True
-    )
-
-    data_itr_2 = ds.GPUDatasetIterator(
-        glob.glob(str(tmpdir) + "/ds_part.*.parquet"),
-        use_row_groups=True,
-        gpu_memory_frac=gpu_memory_frac,
-    )
-
-    df_pp = None
-    for chunk in data_itr_2:
-        df_pp = cudf.concat([df_pp, chunk], axis=0) if df_pp else chunk
-
-    if engine == "parquet":
-        assert df_pp["name-cat"].dtype == "int64"
-    assert df_pp["name-string"].dtype == "int64"
-
-    num_rows, num_row_groups, col_names = cudf.io.read_parquet_metadata(
-        str(tmpdir) + "/_metadata"
-    )
-    assert num_rows == len(df_pp)
     return processor.ds_exports
 
 
