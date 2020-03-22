@@ -635,7 +635,7 @@ class Workflow:
         apply_offline=True,
         record_stats=True,
         shuffle=False,
-        output_path="./ds_export",
+        output_path=None,
         num_out_files=None,
     ):
         # if no tasks have been loaded then we need to load internal config\
