@@ -22,7 +22,7 @@ import shutil
 @pytest.mark.parametrize("gpu_memory_frac", [0.01, 0.1])
 @pytest.mark.parametrize("engine", ["parquet", "csv", "csv-no-header"])
 @pytest.mark.parametrize("dump", [True, False])
-@pytest.mark.parametrize("op_columns", [["x"], None])
+@pytest.mark.parametrize("op_columns", [True, False])
 def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine, op_columns):
     paths = glob.glob(str(datasets[engine]) + "/*." + engine.split("-")[0])
 
@@ -48,7 +48,10 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine, op_col
         cat_names=cat_names, cont_names=cont_names, label_name=label_name, to_cpu=False,
     )
 
-    processor.add_feature([ops.ZeroFill(columns=op_columns), ops.LogOp()])
+    if op_columns:
+        processor.add_feature([ops.ZeroFill(columns=['x']), ops.LogOp()])
+    else:
+        processor.add_feature([ops.ZeroFill(), ops.LogOp()])
     processor.add_preprocess(ops.Normalize())
     processor.add_preprocess(ops.Categorify())
     processor.finalize()
@@ -60,8 +63,8 @@ def test_gpu_preproc_api(tmpdir, datasets, dump, gpu_memory_frac, engine, op_col
         gpu_memory_frac=gpu_memory_frac,
         names=allcols_csv,
     )
-
-    processor.update_stats(data_itr)
+    
+    processor.apply(data_itr, apply_offline=True, record_stats=True, shuffle=True, output_path=tmpdir, num_out_files=len(paths))
 
     if dump:
         config_file = tmpdir + "/temp.yaml"
