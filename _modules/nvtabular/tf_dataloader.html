@@ -1,0 +1,510 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>nvtabular.tf_dataloader &mdash; NVTabular 2020 documentation</title>
+  
+
+  
+  
+  
+  
+
+  
+  <script type="text/javascript" src="../../_static/js/modernizr.min.js"></script>
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../../" src="../../_static/documentation_options.js"></script>
+        <script src="../../_static/jquery.js"></script>
+        <script src="../../_static/underscore.js"></script>
+        <script src="../../_static/doctools.js"></script>
+        <script src="../../_static/language_data.js"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    
+    <script type="text/javascript" src="../../_static/js/theme.js"></script>
+
+    
+
+  
+  <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../../index.html" class="icon icon-home"> NVTabular
+          
+
+          
+          </a>
+
+          
+            
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../Introduction.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../HowItWorks.html">How it Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../examples/index.html">Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api/index.html">API Documentation</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">NVTabular</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../../index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="../index.html">Module code</a> &raquo;</li>
+        
+      <li>nvtabular.tf_dataloader</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <h1>Source code for nvtabular.tf_dataloader</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">warnings</span>
+
+<span class="c1"># need to configure tensorflow to not use all of memory</span>
+<span class="c1"># TF_MEMORY_ALLOCATION is fraction of GPU memory if &lt; 1, and size</span>
+<span class="c1"># in MB if &gt; 1</span>
+<span class="kn">import</span> <span class="nn">rmm</span>
+<span class="kn">import</span> <span class="nn">tensorflow</span> <span class="k">as</span> <span class="nn">tf</span>
+<span class="kn">from</span> <span class="nn">packaging</span> <span class="kn">import</span> <span class="n">version</span>
+<span class="kn">from</span> <span class="nn">tensorflow.python.feature_column</span> <span class="kn">import</span> <span class="n">feature_column_v2</span> <span class="k">as</span> <span class="n">fc</span>
+
+<span class="kn">from</span> <span class="nn">.io</span> <span class="kn">import</span> <span class="n">GPUDatasetIterator</span>
+<span class="kn">from</span> <span class="nn">.workflow</span> <span class="kn">import</span> <span class="n">Workflow</span><span class="p">,</span> <span class="n">_shuffle_part</span>
+
+<span class="n">free_gpu_mem_mb</span> <span class="o">=</span> <span class="n">rmm</span><span class="o">.</span><span class="n">get_info</span><span class="p">()</span><span class="o">.</span><span class="n">free</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1024</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+<span class="n">tf_mem_size</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;TF_MEMORY_ALLOCATION&quot;</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)</span>
+<span class="k">if</span> <span class="nb">float</span><span class="p">(</span><span class="n">tf_mem_size</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+    <span class="n">tf_mem_size</span> <span class="o">=</span> <span class="n">free_gpu_mem_mb</span> <span class="o">*</span> <span class="nb">float</span><span class="p">(</span><span class="n">tf_mem_size</span><span class="p">)</span>
+<span class="n">tf_mem_size</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">tf_mem_size</span><span class="p">)</span>
+<span class="k">assert</span> <span class="n">tf_mem_size</span> <span class="o">&lt;</span> <span class="n">free_gpu_mem_mb</span>
+
+<span class="n">tf_device</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;TF_VISIBLE_DEVICE&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="n">tf</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">set_logical_device_configuration</span><span class="p">(</span>
+        <span class="n">tf</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">list_physical_devices</span><span class="p">(</span><span class="s2">&quot;GPU&quot;</span><span class="p">)[</span><span class="n">tf_device</span><span class="p">],</span>
+        <span class="p">[</span><span class="n">tf</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">LogicalDeviceConfiguration</span><span class="p">(</span><span class="n">memory_limit</span><span class="o">=</span><span class="n">tf_mem_size</span><span class="p">)],</span>
+    <span class="p">)</span>
+<span class="k">except</span> <span class="ne">RuntimeError</span><span class="p">:</span>
+    <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;TensorFlow runtime already initialized, may not be enough memory for cudf&quot;</span><span class="p">)</span>
+
+
+<span class="k">if</span> <span class="n">version</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">__version__</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">version</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="s2">&quot;2.2.0&quot;</span><span class="p">):</span>
+    <span class="kn">from</span> <span class="nn">tfdlpack</span> <span class="kn">import</span> <span class="n">from_dlpack</span> <span class="k">as</span> <span class="n">tf_from_dlpack</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">tensorflow.experimental.dlpack</span> <span class="kn">import</span> <span class="n">from_dlpack</span> <span class="k">as</span> <span class="n">tf_from_dlpack</span>
+
+    <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;Tensorflow 2.2.0 dlpack integration has known memory leak issues&quot;</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_to_tensor</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">  map a cudf series `x` to a `(len(x), 1)` dim</span>
+<span class="sd">  TensorFlow tensor</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+    <span class="c1"># catch cudf warning about row ordering since</span>
+    <span class="c1"># we&#39;re just grabbing vectors</span>
+    <span class="k">with</span> <span class="n">warnings</span><span class="o">.</span><span class="n">catch_warnings</span><span class="p">():</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">simplefilter</span><span class="p">(</span><span class="s2">&quot;ignore&quot;</span><span class="p">)</span>
+        <span class="n">capsule</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">to_dlpack</span><span class="p">()</span>
+
+    <span class="n">tensor</span> <span class="o">=</span> <span class="n">tf_from_dlpack</span><span class="p">(</span><span class="n">capsule</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">tf</span><span class="o">.</span><span class="n">expand_dims</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_num_steps</span><span class="p">(</span><span class="n">total_number</span><span class="p">,</span> <span class="n">step_size</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">  get the number of steps of size `step_size` in a</span>
+<span class="sd">  collection of `total_number` items. If `step_size`</span>
+<span class="sd">  is not a factor of `total_number`, includes the</span>
+<span class="sd">  last smaller-sized step</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">total_number</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="n">step_size</span> <span class="o">+</span> <span class="mi">1</span>
+
+
+<span class="k">def</span> <span class="nf">_get_parents</span><span class="p">(</span><span class="n">column</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">  recursive function for finding the feature columns</span>
+<span class="sd">  that supply inputs for a given `column`. If there are</span>
+<span class="sd">  none, returns the column. Uses sets so is not</span>
+<span class="sd">  deterministic.</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">column</span><span class="o">.</span><span class="n">parents</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">set</span><span class="p">([</span><span class="n">column</span><span class="p">])</span>
+    <span class="n">parents</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">parent</span> <span class="ow">in</span> <span class="n">column</span><span class="o">.</span><span class="n">parents</span><span class="p">:</span>
+        <span class="n">parents</span> <span class="o">|=</span> <span class="n">_get_parents</span><span class="p">(</span><span class="n">parent</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">parents</span>
+
+
+<div class="viewcode-block" id="KerasSequenceDataset"><a class="viewcode-back" href="../../api/tensorflow_dataloader.html#nvtabular.tf_dataloader.KerasSequenceDataset">[docs]</a><span class="k">class</span> <span class="nc">KerasSequenceDataset</span><span class="p">(</span><span class="n">tf</span><span class="o">.</span><span class="n">keras</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">Sequence</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">  Infinite generator used to iterate through csv or parquet dataframes</span>
+<span class="sd">  on GPU by leveraging an NVTabular `dataset`. Applies preprocessing via</span>
+<span class="sd">  NVTabular `Workflow`s and outputs tabular dictionaries of TensorFlow</span>
+<span class="sd">  Tensors via dlpack and tfdlpack. Useful for training tabular models</span>
+<span class="sd">  built in Keras, instantiated by TensorFlow Feature Columns, and trained via</span>
+<span class="sd">  `tf.keras.Model.fit`.</span>
+
+<span class="sd">  In order to minimize loading and preprocessing time, data is loaded</span>
+<span class="sd">  in larger-than-batch-sized chunks whose exact size is decided by the</span>
+<span class="sd">  `buffer_size` argument (see below). These chunks are loaded and</span>
+<span class="sd">  preprocssed by any Workflows all at once to reduce bottlenecks.</span>
+<span class="sd">  Importantly, TensorFlow&#39;s default behavior is to claim all GPU memory</span>
+<span class="sd">  for itself, which leaves none for NVTabular to perform this</span>
+<span class="sd">  functionality. As such, we attempt to configure TensorFlow to restrict</span>
+<span class="sd">  its memory allocation on a given GPU using the environment variables</span>
+<span class="sd">  `TF_MEMORY_ALLOCATION` and `TF_VISIBLE_DEVICE`. If `TF_MEMORY_ALLOCATION &lt; 1`,</span>
+<span class="sd">  it will be assumed that this refers to a fraction of free GPU</span>
+<span class="sd">  memory on the given device. Otherwise, it will refer to an explicit</span>
+<span class="sd">  allocation amount in MB. `TF_VISIBLE_DEVICE` should be an integer GPU</span>
+<span class="sd">  index.</span>
+<span class="sd">  </span>
+<span class="sd">  If `shuffle` is `True`, each of chunks will be shuffled</span>
+<span class="sd">  before being iterated through in batches of size `batch_size`.</span>
+<span class="sd">  While this limits the randomness of batches from epoch to epoch,</span>
+<span class="sd">  pre-randomized datasets (i.e. datasets ordered such that sequential</span>
+<span class="sd">  reading of elements yields unbiased samples of features) and large</span>
+<span class="sd">  buffer sizes should enable sufficient randomness to fit most tabular</span>
+<span class="sd">  datasets of interest.</span>
+
+<span class="sd">  Iterator output is of the form `(dict(features), label)`, where each</span>
+<span class="sd">  element of the features dict is a `feature_name: feature_tensor` pair</span>
+<span class="sd">  and all tensors are of shape `(batch_size, 1)`. Note that this means</span>
+<span class="sd">  vectorized continuous and multi-hot categorical features are not</span>
+<span class="sd">  currently supported, since cuDF doesn&#39;t support array-like columns.</span>
+
+<span class="sd">  The underlying NVTabular `dataset` object is stored in the `nvt_dataset`</span>
+<span class="sd">  property, and should be used for updating NVTabular `Workflow`</span>
+<span class="sd">  statistics:</span>
+<span class="sd">  ```python</span>
+<span class="sd">  workflow = nvt.Workflow(...)</span>
+<span class="sd">  dataset = KerasSequenceDataset(...)</span>
+<span class="sd">  workflow.update_stats(dataset.nvt_dataset, record_stats=True)</span>
+<span class="sd">  ```</span>
+
+<span class="sd">  Parameters</span>
+<span class="sd">  -------------</span>
+<span class="sd">  - file_pattern: str or list(str)</span>
+<span class="sd">      Either a string representing a file pattern (see `tf.glob` for</span>
+<span class="sd">      pattern rules) or a list of filenames to be iterated through</span>
+<span class="sd">  - columns: list(str) or list(tf.feature_column)</span>
+<span class="sd">      Either a list of string column names to use from the dataframe(s)</span>
+<span class="sd">      specified by `file_pattern`, or a ist of TensorFlow feature columns</span>
+<span class="sd">      representing the inputs exposed to the model to be trained.</span>
+<span class="sd">      Columns with parent columns will climb the parent tree, and the</span>
+<span class="sd">      names of the columns in the unique set of terminal columns</span>
+<span class="sd">      will be used as the column names.</span>
+<span class="sd">  - batch_size: int</span>
+<span class="sd">      Number of samples to yield at each iteration</span>
+<span class="sd">  - label_name: str</span>
+<span class="sd">      Column name of the target variable in the dataframe specified by</span>
+<span class="sd">      `file_pattern`</span>
+<span class="sd">  - engine: {&#39;csv&#39;, &#39;parquet&#39;, None}, default None</span>
+<span class="sd">      String specifying the type of read engine to use. If left as `None`,</span>
+<span class="sd">      will try to infer the engine type from the file extension.</span>
+<span class="sd">  - shuffle: bool, default True</span>
+<span class="sd">      Whether to shuffle chunks of batches before iterating through them.</span>
+<span class="sd">  - buffer_size: float or int</span>
+<span class="sd">      If `0 &lt;  buffer_size &lt; 1`, `buffer_size` will refer to the amount of</span>
+<span class="sd">      free GPU memory to occupy with a buffered chunk. If `1 &lt; buffer_size &lt;</span>
+<span class="sd">      batch_size`, the number of rows read for a buffered chunk will</span>
+<span class="sd">      be equal to `int(buffer_size*batch_size)`. Otherwise, if `buffer_size &gt;</span>
+<span class="sd">      batch_size`, `buffer_size` rows will be read in each chunk (except for</span>
+<span class="sd">      the last chunk in a dataset, which will, in general, be smaller).</span>
+<span class="sd">      Larger chunk sizes will lead to more efficieny and randomness,</span>
+<span class="sd">      but require more memory.</span>
+<span class="sd">  - dataset_size: None or int</span>
+<span class="sd">      Number of samples in a dataset. This information will be used</span>
+<span class="sd">      by Keras to decide when to finish an epoch and perform validation.</span>
+<span class="sd">      Note that since we don&#39;t leverage the index provided by Keras to</span>
+<span class="sd">      the `__getitem__` method, but keep track of batches internally,</span>
+<span class="sd">      setting this to a value different than the actual size of the</span>
+<span class="sd">      dataset will have no impact in the frequency with which samples</span>
+<span class="sd">      are seen by the network. If left as `None`, initialization will</span>
+<span class="sd">      include one iteration through the dataset to count the dataset</span>
+<span class="sd">      size explicitly.</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">file_pattern</span><span class="p">,</span>
+        <span class="n">columns</span><span class="p">,</span>
+        <span class="n">batch_size</span><span class="p">,</span>
+        <span class="n">label_name</span><span class="p">,</span>
+        <span class="n">engine</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">shuffle</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">buffer_size</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
+        <span class="n">dataset_size</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">reader_kwargs</span><span class="o">=</span><span class="p">{},</span>
+    <span class="p">):</span>
+        <span class="c1"># use tf glob to find matching files</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">file_pattern</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="n">files</span> <span class="o">=</span> <span class="n">tf</span><span class="o">.</span><span class="n">io</span><span class="o">.</span><span class="n">gfile</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">file_pattern</span><span class="p">)</span>
+            <span class="n">_is_empty_msg</span> <span class="o">=</span> <span class="s2">&quot;Couldn&#39;t find file pattern </span><span class="si">{}</span><span class="s2"> in directory </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+                <span class="o">*</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">file_pattern</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">files</span> <span class="o">=</span> <span class="n">file_pattern</span>
+            <span class="n">_is_empty_msg</span> <span class="o">=</span> <span class="s2">&quot;file_pattern list must contain at least one filename&quot;</span>
+
+        <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">files</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">files</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">_is_empty_msg</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">all</span><span class="p">([</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">col</span><span class="p">,</span> <span class="n">fc</span><span class="o">.</span><span class="n">FeatureColumn</span><span class="p">)</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">columns</span><span class="p">]):</span>
+            <span class="c1"># get column names by traversing parent tree of columns</span>
+            <span class="c1"># TODO: make deterministic?</span>
+            <span class="n">base_columns</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">column</span> <span class="ow">in</span> <span class="n">columns</span><span class="p">:</span>
+                <span class="n">base_columns</span> <span class="o">|=</span> <span class="n">_get_parents</span><span class="p">(</span><span class="n">column</span><span class="p">)</span>
+            <span class="n">column_names</span> <span class="o">=</span> <span class="p">[</span><span class="n">column</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">column</span> <span class="ow">in</span> <span class="n">base_columns</span><span class="p">]</span>
+        <span class="k">elif</span> <span class="nb">all</span><span class="p">([</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">col</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">columns</span><span class="p">]):</span>
+            <span class="n">column_names</span> <span class="o">=</span> <span class="n">columns</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Expected columns to be either a list of all TensorFlow &quot;</span>
+                <span class="s2">&quot;feature_columns or list of all strings. Got </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">columns</span><span class="p">)</span>
+            <span class="p">)</span>
+
+        <span class="c1"># intialize the dataset iterator with a batch_size increased</span>
+        <span class="c1"># by buffer_factor to do as few loads as possible</span>
+        <span class="c1"># TODO: what&#39;s the syntax for byte range read?</span>
+        <span class="k">if</span> <span class="n">buffer_size</span> <span class="o">&gt;=</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">buffer_size</span> <span class="o">&lt;</span> <span class="n">batch_size</span><span class="p">:</span>
+                <span class="n">reader_kwargs</span><span class="p">[</span><span class="s2">&quot;batch_size&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">batch_size</span> <span class="o">*</span> <span class="n">buffer_size</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">reader_kwargs</span><span class="p">[</span><span class="s2">&quot;batch_size&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">buffer_size</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">reader_kwargs</span><span class="p">[</span><span class="s2">&quot;gpu_memory_frac&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">buffer_size</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_nvt_dataset</span> <span class="o">=</span> <span class="n">GPUDatasetIterator</span><span class="p">(</span>
+            <span class="n">files</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="n">column_names</span> <span class="o">+</span> <span class="p">[</span><span class="n">label_name</span><span class="p">],</span> <span class="n">engine</span><span class="o">=</span><span class="n">engine</span><span class="p">,</span> <span class="o">**</span><span class="n">reader_kwargs</span>
+        <span class="p">)</span>
+
+        <span class="c1"># get dataset size if it wasn&#39;t provided</span>
+        <span class="k">if</span> <span class="n">dataset_size</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">dataset_size</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">for</span> <span class="n">chunk</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nvt_dataset</span><span class="p">:</span>
+                <span class="n">dataset_size</span> <span class="o">+=</span> <span class="n">chunk</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dataset_size</span> <span class="o">=</span> <span class="n">dataset_size</span>
+
+        <span class="c1"># set attributes</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">workflows</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span> <span class="o">=</span> <span class="n">batch_size</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">label_name</span> <span class="o">=</span> <span class="n">label_name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">column_names</span> <span class="o">=</span> <span class="n">column_names</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">shuffle</span> <span class="o">=</span> <span class="n">shuffle</span>
+
+        <span class="c1"># initialize iter-relevant attributes</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">iter_obj</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">chunk_idx</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c1"># determines our batch index in a chunk</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">batches_in_chunk</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">_num_steps</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">dataset_size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">nvt_dataset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nvt_dataset</span>
+
+<div class="viewcode-block" id="KerasSequenceDataset.map"><a class="viewcode-back" href="../../api/tensorflow_dataloader.html#nvtabular.tf_dataloader.KerasSequenceDataset.map">[docs]</a>    <span class="k">def</span> <span class="nf">map</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">workflow</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Map an NVTabular Workflow object onto the dataset.</span>
+<span class="sd">    Each chunk read by the iterator will be transformed</span>
+<span class="sd">    via `workflow.apply_ops`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">workflow</span><span class="p">,</span> <span class="n">Workflow</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;Expected NVTabular Workflow, found type </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">workflow</span><span class="p">)))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">workflows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">workflow</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_initialize_iterator</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span>
+
+    <span class="k">def</span> <span class="nf">_initialize_iterator</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">iter_obj</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nvt_dataset</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">chunk_idx</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">batches_in_chunk</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="nf">_preprocess_and_shuffle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">workflow</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">workflows</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">workflow</span><span class="o">.</span><span class="n">apply_ops</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">shuffle</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">_shuffle_part</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">x</span>
+
+    <span class="k">def</span> <span class="nf">_process_next_chunk</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># try to get the next chunk, intializing iterator if</span>
+        <span class="c1"># we haven&#39;t yet and reinitializing if it&#39;s exhausted</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">chunk</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">iter_obj</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">chunk_idx</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">StopIteration</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_initialize_iterator</span><span class="p">()</span>
+            <span class="n">chunk</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">iter_obj</span><span class="p">)</span>
+
+        <span class="c1"># first apply workflows to full chunk and shuffle if needed</span>
+        <span class="n">chunk</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_preprocess_and_shuffle</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">batches_in_chunk</span> <span class="o">=</span> <span class="n">_num_steps</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">chunk</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">)</span>
+
+        <span class="c1"># map cuDF columns to dict of TF tensors</span>
+        <span class="c1"># TODO: is it more efficient to do slicing in cuDF</span>
+        <span class="c1"># then do conversion to TensorFlow at the batch level?</span>
+        <span class="n">tensor_map</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span>
+            <span class="k">lambda</span> <span class="n">column_name</span><span class="p">:</span> <span class="p">(</span><span class="n">column_name</span><span class="p">,</span> <span class="n">_to_tensor</span><span class="p">(</span><span class="n">chunk</span><span class="p">[</span><span class="n">column_name</span><span class="p">])),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">column_names</span> <span class="o">+</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">label_name</span><span class="p">],</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">inputs</span> <span class="o">=</span> <span class="p">{</span><span class="n">column_name</span><span class="p">:</span> <span class="n">x</span> <span class="k">for</span> <span class="n">column_name</span><span class="p">,</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">tensor_map</span><span class="p">}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">labels</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">inputs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">label_name</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="fm">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">):</span>
+        <span class="c1"># Keras Sequence requires that this method be implemented</span>
+        <span class="c1"># but I don&#39;t see a way (or reason frankly) to implement</span>
+        <span class="c1"># arbitrary slicing, so we&#39;ll just call our __next__ method</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="fm">__next__</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="fm">__next__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">batches_in_chunk</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">chunk_idx</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">batches_in_chunk</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_process_next_chunk</span><span class="p">()</span>
+
+        <span class="n">slc</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">chunk_idx</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">chunk_idx</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="p">{</span><span class="n">column_name</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="n">slc</span><span class="p">]</span> <span class="k">for</span> <span class="n">column_name</span><span class="p">,</span> <span class="n">x</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">inputs</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">labels</span><span class="p">[</span><span class="n">slc</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">chunk_idx</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span></div>
+</pre></div>
+
+           </div>
+           
+          </div>
+          <footer>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2020, NVIDIA
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

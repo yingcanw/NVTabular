@@ -1,0 +1,323 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>TensorFlow Dataloader &mdash; NVTabular 2020 documentation</title>
+  
+
+  
+  
+  
+  
+
+  
+  <script type="text/javascript" src="../_static/js/modernizr.min.js"></script>
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script src="../_static/language_data.js"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="prev" title="Torch Dataloader" href="torch_dataloader.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> NVTabular
+          
+
+          
+          </a>
+
+          
+            
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../Introduction.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../HowItWorks.html">How it Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples/index.html">Examples</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">API Documentation</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="workflow.html">Workflow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ops/index.html">Operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="torch_dataloader.html">Torch Dataloader</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">TensorFlow Dataloader</a></li>
+</ul>
+</li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NVTabular</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="index.html">API Documentation</a> &raquo;</li>
+        
+      <li>TensorFlow Dataloader</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  
+<style>
+/* CSS overrides for sphinx_rtd_theme */
+
+/* 24px margin */
+.nbinput.nblast.container,
+.nboutput.nblast.container {
+    margin-bottom: 19px;  /* padding has already 5px */
+}
+
+/* ... except between code cells! */
+.nblast.container + .nbinput.container {
+    margin-top: -19px;
+}
+
+.admonition > p:before {
+    margin-right: 4px;  /* make room for the exclamation icon */
+}
+
+/* Fix math alignment, see https://github.com/rtfd/sphinx_rtd_theme/pull/686 */
+.math {
+    text-align: unset;
+}
+</style>
+<div class="section" id="module-nvtabular.tf_dataloader">
+<span id="tensorflow-dataloader"></span><h1>TensorFlow Dataloader<a class="headerlink" href="#module-nvtabular.tf_dataloader" title="Permalink to this headline">¶</a></h1>
+<dl class="py class">
+<dt id="nvtabular.tf_dataloader.KerasSequenceDataset">
+<em class="property">class </em><code class="sig-prename descclassname">nvtabular.tf_dataloader.</code><code class="sig-name descname">KerasSequenceDataset</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">file_pattern</span></em>, <em class="sig-param"><span class="n">columns</span></em>, <em class="sig-param"><span class="n">batch_size</span></em>, <em class="sig-param"><span class="n">label_name</span></em>, <em class="sig-param"><span class="n">engine</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="n">shuffle</span><span class="o">=</span><span class="default_value">True</span></em>, <em class="sig-param"><span class="n">buffer_size</span><span class="o">=</span><span class="default_value">10</span></em>, <em class="sig-param"><span class="n">dataset_size</span><span class="o">=</span><span class="default_value">None</span></em>, <em class="sig-param"><span class="n">reader_kwargs</span><span class="o">=</span><span class="default_value">{}</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvtabular/tf_dataloader.html#KerasSequenceDataset"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#nvtabular.tf_dataloader.KerasSequenceDataset" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">tensorflow.python.keras.utils.data_utils.Sequence</span></code></p>
+<p>Infinite generator used to iterate through csv or parquet dataframes
+on GPU by leveraging an NVTabular <cite>dataset</cite>. Applies preprocessing via
+NVTabular <cite>Workflow`s and outputs tabular dictionaries of TensorFlow
+Tensors via dlpack and tfdlpack. Useful for training tabular models
+built in Keras, instantiated by TensorFlow Feature Columns, and trained via
+`tf.keras.Model.fit</cite>.</p>
+<p>In order to minimize loading and preprocessing time, data is loaded
+in larger-than-batch-sized chunks whose exact size is decided by the
+<cite>buffer_size</cite> argument (see below). These chunks are loaded and
+preprocssed by any Workflows all at once to reduce bottlenecks.
+Importantly, TensorFlow’s default behavior is to claim all GPU memory
+for itself, which leaves none for NVTabular to perform this
+functionality. As such, we attempt to configure TensorFlow to restrict
+its memory allocation on a given GPU using the environment variables
+<cite>TF_MEMORY_ALLOCATION</cite> and <cite>TF_VISIBLE_DEVICE</cite>. If <cite>TF_MEMORY_ALLOCATION &lt; 1</cite>,
+it will be assumed that this refers to a fraction of free GPU
+memory on the given device. Otherwise, it will refer to an explicit
+allocation amount in MB. <cite>TF_VISIBLE_DEVICE</cite> should be an integer GPU
+index.</p>
+<p>If <cite>shuffle</cite> is <cite>True</cite>, each of chunks will be shuffled
+before being iterated through in batches of size <cite>batch_size</cite>.
+While this limits the randomness of batches from epoch to epoch,
+pre-randomized datasets (i.e. datasets ordered such that sequential
+reading of elements yields unbiased samples of features) and large
+buffer sizes should enable sufficient randomness to fit most tabular
+datasets of interest.</p>
+<p>Iterator output is of the form <cite>(dict(features), label)</cite>, where each
+element of the features dict is a <cite>feature_name: feature_tensor</cite> pair
+and all tensors are of shape <cite>(batch_size, 1)</cite>. Note that this means
+vectorized continuous and multi-hot categorical features are not
+currently supported, since cuDF doesn’t support array-like columns.</p>
+<p>The underlying NVTabular <cite>dataset</cite> object is stored in the <cite>nvt_dataset</cite>
+property, and should be used for updating NVTabular <cite>Workflow</cite>
+statistics:
+<code class="docutils literal notranslate"><span class="pre">`python</span>
+<span class="pre">workflow</span> <span class="pre">=</span> <span class="pre">nvt.Workflow(...)</span>
+<span class="pre">dataset</span> <span class="pre">=</span> <span class="pre">KerasSequenceDataset(...)</span>
+<span class="pre">workflow.update_stats(dataset.nvt_dataset,</span> <span class="pre">record_stats=True)</span>
+<span class="pre">`</span></code></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>file_pattern</strong> (<em>-</em>) – Either a string representing a file pattern (see <cite>tf.glob</cite> for
+pattern rules) or a list of filenames to be iterated through</p></li>
+<li><p><strong>columns</strong> (<em>-</em>) – Either a list of string column names to use from the dataframe(s)
+specified by <cite>file_pattern</cite>, or a ist of TensorFlow feature columns
+representing the inputs exposed to the model to be trained.
+Columns with parent columns will climb the parent tree, and the
+names of the columns in the unique set of terminal columns
+will be used as the column names.</p></li>
+<li><p><strong>batch_size</strong> (<em>-</em>) – Number of samples to yield at each iteration</p></li>
+<li><p><strong>label_name</strong> (<em>-</em>) – Column name of the target variable in the dataframe specified by
+<cite>file_pattern</cite></p></li>
+<li><p><strong>engine</strong> (<em>-</em>) – String specifying the type of read engine to use. If left as <cite>None</cite>,
+will try to infer the engine type from the file extension.</p></li>
+<li><p><strong>shuffle</strong> (<em>-</em>) – Whether to shuffle chunks of batches before iterating through them.</p></li>
+<li><p><strong>buffer_size</strong> (<em>-</em>) – If <cite>0 &lt;  buffer_size &lt; 1</cite>, <cite>buffer_size</cite> will refer to the amount of
+free GPU memory to occupy with a buffered chunk. If <cite>1 &lt; buffer_size &lt;
+batch_size</cite>, the number of rows read for a buffered chunk will
+be equal to <cite>int(buffer_size*batch_size)</cite>. Otherwise, if <cite>buffer_size &gt;
+batch_size</cite>, <cite>buffer_size</cite> rows will be read in each chunk (except for
+the last chunk in a dataset, which will, in general, be smaller).
+Larger chunk sizes will lead to more efficieny and randomness,
+but require more memory.</p></li>
+<li><p><strong>dataset_size</strong> (<em>-</em>) – Number of samples in a dataset. This information will be used
+by Keras to decide when to finish an epoch and perform validation.
+Note that since we don’t leverage the index provided by Keras to
+the <cite>__getitem__</cite> method, but keep track of batches internally,
+setting this to a value different than the actual size of the
+dataset will have no impact in the frequency with which samples
+are seen by the network. If left as <cite>None</cite>, initialization will
+include one iteration through the dataset to count the dataset
+size explicitly.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt id="nvtabular.tf_dataloader.KerasSequenceDataset.map">
+<code class="sig-name descname">map</code><span class="sig-paren">(</span><em class="sig-param"><span class="n">workflow</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nvtabular/tf_dataloader.html#KerasSequenceDataset.map"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#nvtabular.tf_dataloader.KerasSequenceDataset.map" title="Permalink to this definition">¶</a></dt>
+<dd><p>Map an NVTabular Workflow object onto the dataset.
+Each chunk read by the iterator will be transformed
+via <cite>workflow.apply_ops</cite>.</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+      
+        <a href="torch_dataloader.html" class="btn btn-neutral float-left" title="Torch Dataloader" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2020, NVIDIA
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>
