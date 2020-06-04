@@ -177,7 +177,16 @@
 <span class="n">ALL</span> <span class="o">=</span> <span class="s2">&quot;all&quot;</span>
 
 
-<span class="k">class</span> <span class="nc">Operator</span><span class="p">:</span>
+<span class="k">class</span> <span class="nc">OperatorRegistry</span><span class="p">(</span><span class="nb">type</span><span class="p">):</span>
+    <span class="n">OPS</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">def</span> <span class="fm">__new__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">bases</span><span class="p">,</span> <span class="n">dct</span><span class="p">):</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__new__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">bases</span><span class="p">,</span> <span class="n">dct</span><span class="p">)</span>
+        <span class="n">OperatorRegistry</span><span class="o">.</span><span class="n">OPS</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">ret</span>
+        <span class="k">return</span> <span class="n">ret</span>
+
+
+<span class="k">class</span> <span class="nc">Operator</span><span class="p">(</span><span class="n">metaclass</span><span class="o">=</span><span class="n">OperatorRegistry</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Base class for all operator classes.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -275,8 +284,6 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">assemble_new_df</span><span class="p">(</span><span class="n">gdf</span><span class="p">,</span> <span class="n">new_gdf</span><span class="p">,</span> <span class="n">target_columns</span><span class="p">)</span>
 
     <span class="k">def</span> <span class="nf">assemble_new_df</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">origin_gdf</span><span class="p">,</span> <span class="n">new_gdf</span><span class="p">,</span> <span class="n">target_columns</span><span class="p">):</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">new_gdf</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">origin_gdf</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">replace</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">preprocessing</span> <span class="ow">and</span> <span class="n">target_columns</span><span class="p">:</span>
             <span class="n">origin_gdf</span><span class="p">[</span><span class="n">target_columns</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_gdf</span>
             <span class="k">return</span> <span class="n">origin_gdf</span>
@@ -340,8 +347,7 @@
 
 <span class="k">class</span> <span class="nc">MinMax</span><span class="p">(</span><span class="n">StatOperator</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Moments operation calculates some of the statistics of features including</span>
-<span class="sd">    mean, variance, standarded deviation, and count.</span>
+<span class="sd">    MinMax operation calculates min and max statistics of features.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    -----------</span>
@@ -533,9 +539,7 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">batch_medians</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
             <span class="n">col</span> <span class="o">=</span> <span class="n">gdf</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
             <span class="n">col</span> <span class="o">=</span> <span class="n">col</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">sort_values</span><span class="p">()</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">fill</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">batch_medians</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fill</span><span class="p">)</span>
-            <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">col</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">col</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">batch_medians</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">col</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">col</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">]))</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">batch_medians</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
@@ -717,7 +721,7 @@
 <span class="sd">    This operation sets negative values to zero.</span>
 
 <span class="sd">    Although you can directly call methods of this class to</span>
-<span class="sd">    transform your categorical features, it&#39;s typically used within a</span>
+<span class="sd">    transform your continuous features, it&#39;s typically used within a</span>
 <span class="sd">    Workflow class.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
@@ -744,7 +748,7 @@
 <span class="sd">    to standardize the features.</span>
 
 <span class="sd">    Although you can directly call methods of this class to</span>
-<span class="sd">    transform your categorical features, it&#39;s typically used within a</span>
+<span class="sd">    transform your continuous features, it&#39;s typically used within a</span>
 <span class="sd">    Workflow class.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
@@ -770,7 +774,7 @@
 <span class="sd">    to standardize the features.</span>
 
 <span class="sd">    Although you can directly call methods of this class to</span>
-<span class="sd">    transform your categorical features, it&#39;s typically used within a</span>
+<span class="sd">    transform your continuous features, it&#39;s typically used within a</span>
 <span class="sd">    Workflow class.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
@@ -804,85 +808,76 @@
 <div class="viewcode-block" id="FillMissing"><a class="viewcode-back" href="../../api/ops/fillmissing.html#nvtabular.ops.FillMissing">[docs]</a><span class="k">class</span> <span class="nc">FillMissing</span><span class="p">(</span><span class="n">DFOperator</span><span class="p">):</span>
 
     <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Many datasets may contain missing values for various reasons, and</span>
-<span class="sd">    there are couple of ways to fill these missing values. This operation</span>
-<span class="sd">    supports the top two widely used methods, namely median and constant.</span>
-<span class="sd">    Median method calculates the median of the column (feature) and fills</span>
-<span class="sd">    the missing values with this median value while constant method fills</span>
-<span class="sd">    missing values with a pre-defined value.</span>
+<span class="sd">    This operation replaces missing values with a constant pre-defined value</span>
 
 <span class="sd">    Although you can directly call methods of this class to</span>
-<span class="sd">    transform your categorical features, it&#39;s typically used within a</span>
+<span class="sd">    transform your continuous features, it&#39;s typically used within a</span>
 <span class="sd">    Workflow class.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    -----------</span>
-<span class="sd">    fill_strategy : MEDIAN or CONSTANT</span>
-<span class="sd">        MEDIAN method fills missing values with median of the column.</span>
-<span class="sd">        CONSTANT method fills missing values with the value in fill_val</span>
-<span class="sd">        parameter.</span>
-<span class="sd">    fill_val : float</span>
-<span class="sd">    filler : float</span>
-<span class="sd">    add_col : bool, default False</span>
+<span class="sd">    fill_val : float, default 0</span>
+<span class="sd">        The constant value to replace missing values with</span>
 <span class="sd">    columns :</span>
 <span class="sd">    preprocessing : bool, default True</span>
 <span class="sd">    replace : bool, default True</span>
-<span class="sd">    default_in :</span>
-<span class="sd">    default_out :</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="n">MEDIAN</span> <span class="o">=</span> <span class="s2">&quot;median&quot;</span>
-    <span class="n">CONSTANT</span> <span class="o">=</span> <span class="s2">&quot;constant&quot;</span>
     <span class="n">default_in</span> <span class="o">=</span> <span class="n">CONT</span>
     <span class="n">default_out</span> <span class="o">=</span> <span class="n">CONT</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">fill_strategy</span><span class="o">=</span><span class="n">MEDIAN</span><span class="p">,</span>
-        <span class="n">fill_val</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
-        <span class="n">filler</span><span class="o">=</span><span class="p">{},</span>
-        <span class="n">add_col</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-        <span class="n">columns</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-        <span class="n">preprocessing</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-        <span class="n">replace</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-        <span class="n">default_in</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-        <span class="n">default_out</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">fill_val</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">preprocessing</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="n">columns</span><span class="p">,</span> <span class="n">preprocessing</span><span class="o">=</span><span class="n">preprocessing</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="n">replace</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">fill_strategy</span> <span class="o">=</span> <span class="n">fill_strategy</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">fill_val</span> <span class="o">=</span> <span class="n">fill_val</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">add_col</span> <span class="o">=</span> <span class="n">add_col</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">filler</span> <span class="o">=</span> <span class="n">filler</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">req_stats</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[]</span>
+
+    <span class="nd">@annotate</span><span class="p">(</span><span class="s2">&quot;FillMissing_op&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;darkgreen&quot;</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="s2">&quot;nvt_python&quot;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">op_logic</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gdf</span><span class="p">:</span> <span class="n">cudf</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">target_columns</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span> <span class="n">stats_context</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">cont_names</span> <span class="o">=</span> <span class="n">target_columns</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cont_names</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">gdf</span>
+        <span class="n">z_gdf</span> <span class="o">=</span> <span class="n">gdf</span><span class="p">[</span><span class="n">cont_names</span><span class="p">]</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">z_gdf</span><span class="o">.</span><span class="n">columns</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_id</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">z_gdf</span><span class="o">.</span><span class="n">columns</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">z_gdf</span></div>
+
+
+<div class="viewcode-block" id="FillMedian"><a class="viewcode-back" href="../../api/ops/fillmissing.html#nvtabular.ops.FillMedian">[docs]</a><span class="k">class</span> <span class="nc">FillMedian</span><span class="p">(</span><span class="n">DFOperator</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    This operation replaces missing values with the median value for the column.</span>
+
+<span class="sd">    Although you can directly call methods of this class to</span>
+<span class="sd">    transform your continuous features, it&#39;s typically used within a</span>
+<span class="sd">    Workflow class.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    -----------</span>
+<span class="sd">    columns :</span>
+<span class="sd">    preprocessing : bool, default True</span>
+<span class="sd">    replace : bool, default True</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">default_in</span> <span class="o">=</span> <span class="n">CONT</span>
+    <span class="n">default_out</span> <span class="o">=</span> <span class="n">CONT</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span> <span class="nf">req_stats</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="p">[</span><span class="n">Median</span><span class="p">()]</span>
 
-    <span class="nd">@annotate</span><span class="p">(</span><span class="s2">&quot;FillMissing_op&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;darkgreen&quot;</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="s2">&quot;nvt_python&quot;</span><span class="p">)</span>
+    <span class="nd">@annotate</span><span class="p">(</span><span class="s2">&quot;FillMedian_op&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;darkgreen&quot;</span><span class="p">,</span> <span class="n">domain</span><span class="o">=</span><span class="s2">&quot;nvt_python&quot;</span><span class="p">)</span>
     <span class="k">def</span> <span class="nf">op_logic</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gdf</span><span class="p">:</span> <span class="n">cudf</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">target_columns</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span> <span class="n">stats_context</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-        <span class="n">cont_names</span> <span class="o">=</span> <span class="n">target_columns</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">cont_names</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">stats_context</span><span class="p">[</span><span class="s2">&quot;medians&quot;</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">target_columns</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">gdf</span>
-        <span class="n">z_gdf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">apply_filler</span><span class="p">(</span><span class="n">gdf</span><span class="p">[</span><span class="n">cont_names</span><span class="p">],</span> <span class="n">stats_context</span><span class="p">,</span> <span class="n">cont_names</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">z_gdf</span>
 
-    <span class="k">def</span> <span class="nf">apply_filler</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gdf</span><span class="p">,</span> <span class="n">stats_context</span><span class="p">,</span> <span class="n">cont_names</span><span class="p">):</span>
-        <span class="n">na_names</span> <span class="o">=</span> <span class="p">[</span><span class="n">name</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">cont_names</span> <span class="k">if</span> <span class="n">gdf</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">isna</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">()]</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">add_col</span><span class="p">:</span>
-            <span class="n">gdf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">add_na_indicators</span><span class="p">(</span><span class="n">gdf</span><span class="p">,</span> <span class="n">na_names</span><span class="p">,</span> <span class="n">cont_names</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">na_names</span><span class="p">:</span>
-            <span class="n">gdf</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">gdf</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">(</span><span class="n">stats_context</span><span class="p">[</span><span class="s2">&quot;medians&quot;</span><span class="p">][</span><span class="n">col</span><span class="p">]))</span>
-        <span class="n">gdf</span><span class="o">.</span><span class="n">columns</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_id</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">gdf</span><span class="o">.</span><span class="n">columns</span><span class="p">]</span>
-        <span class="k">return</span> <span class="n">gdf</span>
-
-    <span class="k">def</span> <span class="nf">add_na_indicators</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gdf</span><span class="p">:</span> <span class="n">cudf</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">na_names</span><span class="p">,</span> <span class="n">cat_names</span><span class="p">):</span>
-        <span class="n">gdf</span> <span class="o">=</span> <span class="n">cudf</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
-        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">na_names</span><span class="p">:</span>
-            <span class="n">name_na</span> <span class="o">=</span> <span class="n">name</span> <span class="o">+</span> <span class="s2">&quot;_na&quot;</span>
-            <span class="n">gdf</span><span class="p">[</span><span class="n">name_na</span><span class="p">]</span> <span class="o">=</span> <span class="n">gdf</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">isna</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">name_na</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">cat_names</span><span class="p">:</span>
-                <span class="n">cat_names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name_na</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">gdf</span></div>
+        <span class="n">new_gdf</span> <span class="o">=</span> <span class="n">cudf</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">target_columns</span><span class="p">:</span>
+            <span class="n">new_gdf</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">gdf</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="n">stats_context</span><span class="p">[</span><span class="s2">&quot;medians&quot;</span><span class="p">][</span><span class="n">col</span><span class="p">])</span>
+        <span class="n">new_gdf</span><span class="o">.</span><span class="n">columns</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_id</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">new_gdf</span><span class="o">.</span><span class="n">columns</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">new_gdf</span></div>
 
 
 <span class="k">class</span> <span class="nc">GroupByMoments</span><span class="p">(</span><span class="n">StatOperator</span><span class="p">):</span>
@@ -1203,12 +1198,9 @@
         <span class="k">return</span> <span class="n">new_gdf</span>
 
     <span class="k">def</span> <span class="nf">get_emb_sz</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">encoders</span><span class="p">,</span> <span class="n">cat_names</span><span class="p">):</span>
-        <span class="n">work_in</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">encoders</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
-            <span class="n">work_in</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">encoders</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
         <span class="c1"># sorted key required to ensure same sort occurs for all values</span>
         <span class="n">ret_list</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">def_emb_sz</span><span class="p">(</span><span class="n">work_in</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span>
+            <span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">def_emb_sz</span><span class="p">(</span><span class="n">encoders</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span>
             <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">cat_names</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">entry</span><span class="p">:</span> <span class="n">entry</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">])</span>
         <span class="p">]</span>
         <span class="k">return</span> <span class="n">ret_list</span>
@@ -1224,22 +1216,6 @@
         <span class="n">sz</span> <span class="o">=</span> <span class="n">sz_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">emb_sz_rule</span><span class="p">(</span><span class="n">n_cat</span><span class="p">)))</span>  <span class="c1"># rule of thumb</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">embed_sz</span><span class="p">[</span><span class="n">n</span><span class="p">]</span> <span class="o">=</span> <span class="n">sz</span>
         <span class="k">return</span> <span class="n">n_cat</span><span class="p">,</span> <span class="n">sz</span></div></div>
-
-
-<span class="n">all_ops</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="n">MinMax</span><span class="p">()</span><span class="o">.</span><span class="n">_id</span><span class="p">:</span> <span class="n">MinMax</span><span class="p">,</span>
-    <span class="n">Moments</span><span class="p">()</span><span class="o">.</span><span class="n">_id</span><span class="p">:</span> <span class="n">Moments</span><span class="p">,</span>
-    <span class="n">Median</span><span class="p">()</span><span class="o">.</span><span class="n">_id</span><span class="p">:</span> <span class="n">Median</span><span class="p">,</span>
-    <span class="n">Encoder</span><span class="p">()</span><span class="o">.</span><span class="n">_id</span><span class="p">:</span> <span class="n">Encoder</span><span class="p">,</span>
-    <span class="n">Export</span><span class="p">()</span><span class="o">.</span><span class="n">_id</span><span class="p">:</span> <span class="n">Export</span><span class="p">,</span>
-    <span class="n">ZeroFill</span><span class="p">()</span><span class="o">.</span><span class="n">_id</span><span class="p">:</span> <span class="n">ZeroFill</span><span class="p">,</span>
-    <span class="n">LogOp</span><span class="p">()</span><span class="o">.</span><span class="n">_id</span><span class="p">:</span> <span class="n">LogOp</span><span class="p">,</span>
-    <span class="n">Normalize</span><span class="p">()</span><span class="o">.</span><span class="n">_id</span><span class="p">:</span> <span class="n">Normalize</span><span class="p">,</span>
-    <span class="n">FillMissing</span><span class="p">()</span><span class="o">.</span><span class="n">_id</span><span class="p">:</span> <span class="n">FillMissing</span><span class="p">,</span>
-    <span class="n">Categorify</span><span class="p">()</span><span class="o">.</span><span class="n">_id</span><span class="p">:</span> <span class="n">Categorify</span><span class="p">,</span>
-    <span class="n">GroupBy</span><span class="p">()</span><span class="o">.</span><span class="n">_id</span><span class="p">:</span> <span class="n">GroupBy</span><span class="p">,</span>
-    <span class="n">GroupByMoments</span><span class="p">()</span><span class="o">.</span><span class="n">_id</span><span class="p">:</span> <span class="n">GroupByMoments</span><span class="p">,</span>
-<span class="p">}</span>
 </pre></div>
 
            </div>

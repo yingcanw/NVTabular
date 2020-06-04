@@ -419,23 +419,15 @@ div.rendered_html tbody tr:hover {
 inefficiencies in the existing hardware/software stack. Accelerating these pipelines on new hardware like GPUs may require us to make new choices about the representations we use to store that data, and parquet represents a strong alternative.</p>
 <div class="section" id="Quick-Aside:-Clearing-Cache">
 <h3>Quick Aside: Clearing Cache<a class="headerlink" href="#Quick-Aside:-Clearing-Cache" title="Permalink to this headline">¶</a></h3>
-<p>The following line is not strictly necessary, but is included for those who want to validate NVIDIA’s benchmarks. We start by clearing the existing cache to start as “fresh” as possible. If you’re having trouble running it, try executing the container with the <code class="docutils literal notranslate"><span class="pre">--priveleged</span></code> flag.</p>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+<p>The following line is not strictly necessary, but is included for those who want to validate NVIDIA’s benchmarks. We start by clearing the existing cache to start as “fresh” as possible. If you’re having trouble running it, try executing the container with the <code class="docutils literal notranslate"><span class="pre">--privileged</span></code> flag.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre>
 <span></span><span class="o">!</span>sync<span class="p">;</span> <span class="nb">echo</span> <span class="m">3</span> &gt; /proc/sys/vm/drop_caches
 </pre></div>
 </div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-/bin/sh: 1: cannot create /proc/sys/vm/drop_caches: Read-only file system
-</pre></div></div>
 </div>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
@@ -453,7 +445,7 @@ inefficiencies in the existing hardware/software stack. Accelerating these pipel
 <span class="kn">import</span> <span class="nn">rmm</span>
 <span class="kn">import</span> <span class="nn">nvtabular</span> <span class="k">as</span> <span class="nn">nvt</span>
 <span class="kn">from</span> <span class="nn">nvtabular.ops</span> <span class="kn">import</span> <span class="n">Normalize</span><span class="p">,</span> <span class="n">FillMissing</span><span class="p">,</span> <span class="n">Categorify</span><span class="p">,</span> <span class="n">Moments</span><span class="p">,</span> <span class="n">Median</span><span class="p">,</span> <span class="n">Encoder</span><span class="p">,</span> <span class="n">LogOp</span><span class="p">,</span> <span class="n">ZeroFill</span>
-<span class="kn">from</span> <span class="nn">nvtabular.torch_dataloader</span> <span class="kn">import</span> <span class="n">FileItrDataset</span><span class="p">,</span> <span class="n">DLCollator</span><span class="p">,</span> <span class="n">DLDataLoader</span>
+<span class="kn">from</span> <span class="nn">nvtabular.torch_dataloader</span> <span class="kn">import</span> <span class="n">DLDataLoader</span><span class="p">,</span> <span class="n">TorchTensorBatchDatasetItr</span><span class="p">,</span> <span class="n">create_tensors_plain</span>
 
 <span class="c1"># tools for training</span>
 <span class="kn">from</span> <span class="nn">fastai.basic_train</span> <span class="kn">import</span> <span class="n">Learner</span>
@@ -468,12 +460,12 @@ inefficiencies in the existing hardware/software stack. Accelerating these pipel
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-/conda/envs/rapids/lib/python3.7/site-packages/numba/cuda/envvars.py:17: NumbaWarning:
+/opt/conda/lib/python3.6/site-packages/numba/cuda/envvars.py:17: NumbaWarning:
 Environment variables with the &#39;NUMBAPRO&#39; prefix are deprecated and consequently ignored, found use of NUMBAPRO_NVVM=/usr/local/cuda/nvvm/lib64/libnvvm.so.
 
 For more information about alternatives visit: (&#39;http://numba.pydata.org/numba-doc/latest/cuda/overview.html&#39;, &#39;#cudatoolkit-lookup&#39;)
   warnings.warn(errors.NumbaWarning(msg))
-/conda/envs/rapids/lib/python3.7/site-packages/numba/cuda/envvars.py:17: NumbaWarning:
+/opt/conda/lib/python3.6/site-packages/numba/cuda/envvars.py:17: NumbaWarning:
 Environment variables with the &#39;NUMBAPRO&#39; prefix are deprecated and consequently ignored, found use of NUMBAPRO_LIBDEVICE=/usr/local/cuda/nvvm/libdevice/.
 
 For more information about alternatives visit: (&#39;http://numba.pydata.org/numba-doc/latest/cuda/overview.html&#39;, &#39;#cudatoolkit-lookup&#39;)
@@ -525,26 +517,14 @@ For more information about alternatives visit: (&#39;http://numba.pydata.org/num
 </pre></div>
 </div>
 </div>
-<div class="nbinput docutils container">
+<div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre>
-<span></span><span class="o">!</span> ls <span class="nv">$INPUT_DATA_DIR</span>
+<span></span><span class="c1"># ! ls $INPUT_DATA_DIR</span>
 </pre></div>
 </div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-_metadata       day_12.parquet  day_17.parquet  day_21.parquet  day_5.parquet
-day_0.parquet   day_13.parquet  day_18.parquet  day_22.parquet  day_6.parquet
-day_1.parquet   day_14.parquet  day_19.parquet  day_23.parquet  day_7.parquet
-day_10.parquet  day_15.parquet  day_2.parquet   day_3.parquet   day_8.parquet
-day_11.parquet  day_16.parquet  day_20.parquet  day_4.parquet   day_9.parquet
-</pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
@@ -596,8 +576,8 @@ magnitude and are uncentered (i.e. E[x] != 0).</p>
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre>
-<span></span><span class="n">train_ds_iterator</span> <span class="o">=</span> <span class="n">nvt</span><span class="o">.</span><span class="n">dataset</span><span class="p">(</span><span class="n">train_paths</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s1">&#39;parquet&#39;</span><span class="p">,</span> <span class="n">gpu_memory_frac</span><span class="o">=</span><span class="mf">0.2</span><span class="p">)</span>
-<span class="n">valid_ds_iterator</span> <span class="o">=</span> <span class="n">nvt</span><span class="o">.</span><span class="n">dataset</span><span class="p">(</span><span class="n">valid_paths</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s1">&#39;parquet&#39;</span><span class="p">,</span> <span class="n">gpu_memory_frac</span><span class="o">=</span><span class="mf">0.2</span><span class="p">)</span>
+<span></span><span class="n">train_ds_iterator</span> <span class="o">=</span> <span class="n">nvt</span><span class="o">.</span><span class="n">dataset</span><span class="p">(</span><span class="n">train_paths</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s1">&#39;parquet&#39;</span><span class="p">,</span> <span class="n">gpu_memory_frac</span><span class="o">=</span><span class="mf">0.3</span><span class="p">)</span>
+<span class="n">valid_ds_iterator</span> <span class="o">=</span> <span class="n">nvt</span><span class="o">.</span><span class="n">dataset</span><span class="p">(</span><span class="n">valid_paths</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s1">&#39;parquet&#39;</span><span class="p">,</span> <span class="n">gpu_memory_frac</span><span class="o">=</span><span class="mf">0.3</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -630,8 +610,8 @@ magnitude and are uncentered (i.e. E[x] != 0).</p>
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-CPU times: user 22min 5s, sys: 14min 6s, total: 36min 12s
-Wall time: 28min 58s
+CPU times: user 21min 18s, sys: 10min 39s, total: 31min 57s
+Wall time: 21min 21s
 </pre></div></div>
 </div>
 <div class="nbinput docutils container">
@@ -649,8 +629,8 @@ Wall time: 28min 58s
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-CPU times: user 33.5 s, sys: 24.5 s, total: 58 s
-Wall time: 43.5 s
+CPU times: user 33.1 s, sys: 21.7 s, total: 54.8 s
+Wall time: 34.9 s
 </pre></div></div>
 </div>
 <p>And just like that, we have training and validation sets ready to feed to a model!</p>
@@ -691,36 +671,34 @@ Wall time: 43.5 s
 </div>
 </div>
 <div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre>
+<span></span><span class="n">train_data_itrs</span> <span class="o">=</span> <span class="n">TorchTensorBatchDatasetItr</span><span class="p">(</span><span class="n">train_paths</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s1">&#39;parquet&#39;</span><span class="p">,</span> <span class="n">gpu_memory_frac</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">sub_batch_size</span><span class="o">=</span><span class="mi">1600000</span><span class="p">,</span> <span class="n">cats</span><span class="o">=</span><span class="n">CATEGORICAL_COLUMNS</span><span class="p">,</span> <span class="n">conts</span><span class="o">=</span><span class="n">CONTINUOUS_COLUMNS</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="n">LABEL_COLUMNS</span><span class="p">)</span>
+<span class="n">valid_data_itrs</span> <span class="o">=</span> <span class="n">TorchTensorBatchDatasetItr</span><span class="p">(</span><span class="n">valid_paths</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s1">&#39;parquet&#39;</span><span class="p">,</span> <span class="n">gpu_memory_frac</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">sub_batch_size</span><span class="o">=</span><span class="mi">1600000</span><span class="p">,</span> <span class="n">cats</span><span class="o">=</span><span class="n">CATEGORICAL_COLUMNS</span><span class="p">,</span> <span class="n">conts</span><span class="o">=</span><span class="n">CONTINUOUS_COLUMNS</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="n">LABEL_COLUMNS</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre>
+<span></span><span class="k">def</span> <span class="nf">gen_col</span><span class="p">(</span><span class="n">batch</span><span class="p">):</span>
+    <span class="n">batch</span> <span class="o">=</span> <span class="n">create_tensors_plain</span><span class="p">(</span><span class="n">batch</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">CATEGORICAL_COLUMNS</span><span class="p">,</span> <span class="n">CONTINUOUS_COLUMNS</span><span class="p">,</span> <span class="n">LABEL_COLUMNS</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">batch</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">batch</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="n">batch</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">long</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre>
-<span></span><span class="n">train_data_itrs</span> <span class="o">=</span> <span class="p">[</span><span class="n">FileItrDataset</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">names</span><span class="o">=</span><span class="n">COLUMNS</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s1">&#39;parquet&#39;</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">1600000</span><span class="p">,</span> <span class="n">sep</span><span class="o">=</span><span class="s2">&quot;</span><span class="se">\t</span><span class="s2">&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">train_paths</span><span class="p">]</span>
-<span class="n">valid_data_itrs</span> <span class="o">=</span> <span class="p">[</span><span class="n">FileItrDataset</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">names</span><span class="o">=</span><span class="n">COLUMNS</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s1">&#39;parquet&#39;</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">1600000</span><span class="p">,</span> <span class="n">sep</span><span class="o">=</span><span class="s2">&quot;</span><span class="se">\t</span><span class="s2">&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">train_paths</span><span class="p">]</span>
-</pre></div>
-</div>
-</div>
-<p>Now we chain these iterators together use PyTorch’s <code class="docutils literal notranslate"><span class="pre">ChainDataset</span></code></p>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[16]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre>
-<span></span><span class="n">train_dataset</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">ChainDataset</span><span class="p">(</span><span class="n">train_data_itrs</span><span class="p">)</span>
-<span class="n">valid_dataset</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">ChainDataset</span><span class="p">(</span><span class="n">valid_data_itrs</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-<p>NVTabular’s <code class="docutils literal notranslate"><span class="pre">DLCollator</span></code> maps the output of these iterators into the tensors expected by FastAI. We’ll use it a <code class="docutils literal notranslate"><span class="pre">collate_fn</span></code> when we instantiate a <code class="docutils literal notranslate"><span class="pre">DLDataLoader</span></code>.</p>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[17]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre>
-<span></span><span class="n">dlc</span> <span class="o">=</span> <span class="n">DLCollator</span><span class="p">(</span><span class="n">preproc</span><span class="o">=</span><span class="n">proc</span><span class="p">,</span> <span class="n">apply_ops</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<span class="n">train_dataloader</span> <span class="o">=</span> <span class="n">DLDataLoader</span><span class="p">(</span><span class="n">train_dataset</span><span class="p">,</span> <span class="n">collate_fn</span><span class="o">=</span><span class="n">dlc</span><span class="o">.</span><span class="n">gdf_col</span><span class="p">,</span> <span class="n">pin_memory</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-<span class="n">valid_dataloader</span> <span class="o">=</span> <span class="n">DLDataLoader</span><span class="p">(</span><span class="n">valid_dataset</span><span class="p">,</span> <span class="n">collate_fn</span><span class="o">=</span><span class="n">dlc</span><span class="o">.</span><span class="n">gdf_col</span><span class="p">,</span> <span class="n">pin_memory</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-<span class="n">databunch</span> <span class="o">=</span> <span class="n">DataBunch</span><span class="p">(</span><span class="n">train_dataloader</span><span class="p">,</span> <span class="n">valid_dataloader</span><span class="p">,</span> <span class="n">collate_fn</span><span class="o">=</span><span class="n">dlc</span><span class="o">.</span><span class="n">gdf_col</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">)</span>
+<span></span><span class="n">train_dataloader</span> <span class="o">=</span> <span class="n">DLDataLoader</span><span class="p">(</span><span class="n">train_data_itrs</span><span class="p">,</span> <span class="n">collate_fn</span><span class="o">=</span><span class="n">gen_col</span><span class="p">,</span> <span class="n">pin_memory</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">valid_dataloader</span> <span class="o">=</span> <span class="n">DLDataLoader</span><span class="p">(</span><span class="n">valid_data_itrs</span><span class="p">,</span> <span class="n">collate_fn</span><span class="o">=</span><span class="n">gen_col</span><span class="p">,</span> <span class="n">pin_memory</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">num_workers</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">databunch</span> <span class="o">=</span> <span class="n">DataBunch</span><span class="p">(</span><span class="n">train_dataloader</span><span class="p">,</span> <span class="n">valid_dataloader</span><span class="p">,</span> <span class="n">collate_fn</span><span class="o">=</span><span class="n">gen_col</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -730,7 +708,7 @@ Wall time: 43.5 s
 <h2>Training<a class="headerlink" href="#Training" title="Permalink to this headline">¶</a></h2>
 <p>One extra handy functionality of NVTabular is the ability to use the stats collected by the <code class="docutils literal notranslate"><span class="pre">Categorify</span></code> op to define embedding dictionary sizes (i.e. the number of rows of your embedding table). It even includes a heuristic for computing a good embedding size (i.e. the number of columns of your embedding table) based off of the number of categories.</p>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[18]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[16]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre>
@@ -739,7 +717,7 @@ Wall time: 43.5 s
 </div>
 </div>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[21]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[17]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre>
@@ -749,8 +727,8 @@ Wall time: 43.5 s
 </pre></div>
 </div>
 </div>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[24]:
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre>
@@ -762,31 +740,6 @@ Wall time: 43.5 s
 <span class="nb">print</span><span class="p">(</span><span class="n">t_final</span><span class="p">)</span>
 </pre></div>
 </div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: left;">
-      <th>epoch</th>
-      <th>train_loss</th>
-      <th>valid_loss</th>
-      <th>accuracy</th>
-      <th>time</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>0</td>
-      <td>0.122840</td>
-      <td>0.121734</td>
-      <td>0.967229</td>
-      <td>2:18:33</td>
-    </tr>
-  </tbody>
-</table></div>
 </div>
 </div>
 </div>

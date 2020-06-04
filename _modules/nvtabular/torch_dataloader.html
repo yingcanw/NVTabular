@@ -272,7 +272,18 @@
             <span class="n">process_one_df</span><span class="p">(</span><span class="n">gdf</span><span class="p">,</span> <span class="n">cats</span><span class="p">,</span> <span class="n">conts</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="n">preproc</span><span class="o">=</span><span class="n">preproc</span><span class="p">,</span> <span class="n">apply_ops</span><span class="o">=</span><span class="n">apply_ops</span><span class="p">)</span>
     <span class="k">elif</span> <span class="n">gdf</span><span class="p">:</span>
         <span class="n">process_one_df</span><span class="p">(</span><span class="n">gdf</span><span class="p">,</span> <span class="n">cats</span><span class="p">,</span> <span class="n">conts</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="n">preproc</span><span class="o">=</span><span class="n">preproc</span><span class="p">,</span> <span class="n">apply_ops</span><span class="o">=</span><span class="n">apply_ops</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">combine_tensors</span><span class="p">(</span><span class="n">cats</span><span class="p">,</span> <span class="n">conts</span><span class="p">,</span> <span class="n">label</span><span class="p">)</span>
 
+
+<span class="k">def</span> <span class="nf">create_tensors_plain</span><span class="p">(</span><span class="n">gdf</span><span class="p">,</span> <span class="n">cat_cols</span><span class="p">,</span> <span class="n">cont_cols</span><span class="p">,</span> <span class="n">label_cols</span><span class="p">):</span>
+    <span class="n">cats</span><span class="p">,</span> <span class="n">conts</span><span class="p">,</span> <span class="n">label</span> <span class="o">=</span> <span class="p">{},</span> <span class="p">{},</span> <span class="p">{}</span>
+    <span class="n">_one_df</span><span class="p">(</span>
+        <span class="n">gdf</span><span class="p">,</span> <span class="n">cats</span><span class="p">,</span> <span class="n">conts</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="n">cat_names</span><span class="o">=</span><span class="n">cat_cols</span><span class="p">,</span> <span class="n">cont_names</span><span class="o">=</span><span class="n">cont_cols</span><span class="p">,</span> <span class="n">label_names</span><span class="o">=</span><span class="n">label_cols</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">combine_tensors</span><span class="p">(</span><span class="n">cats</span><span class="p">,</span> <span class="n">conts</span><span class="p">,</span> <span class="n">label</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">combine_tensors</span><span class="p">(</span><span class="n">cats</span><span class="p">,</span> <span class="n">conts</span><span class="p">,</span> <span class="n">label</span><span class="p">):</span>
     <span class="n">cats_list</span> <span class="o">=</span> <span class="p">(</span>
         <span class="p">[</span><span class="n">cats</span><span class="p">[</span><span class="n">x</span><span class="p">]</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">cats</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">entry</span><span class="p">:</span> <span class="n">entry</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">])]</span>
         <span class="k">if</span> <span class="n">cats</span>
@@ -286,6 +297,23 @@
     <span class="n">conts</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="n">conts_list</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">conts_list</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="kc">None</span>
     <span class="n">label</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span><span class="n">label_list</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">label_list</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="kc">None</span>
     <span class="k">return</span> <span class="n">cats</span><span class="p">,</span> <span class="n">conts</span><span class="p">,</span> <span class="n">label</span>
+
+
+<span class="k">def</span> <span class="nf">_one_df</span><span class="p">(</span>
+    <span class="n">gdf</span><span class="p">,</span> <span class="n">cats</span><span class="p">,</span> <span class="n">conts</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="n">cat_names</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">cont_names</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">label_names</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<span class="p">):</span>
+    <span class="n">gdf_cats</span><span class="p">,</span> <span class="n">gdf_conts</span><span class="p">,</span> <span class="n">gdf_label</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">gdf</span><span class="p">[</span><span class="n">cat_names</span><span class="p">],</span>
+        <span class="n">gdf</span><span class="p">[</span><span class="n">cont_names</span><span class="p">],</span>
+        <span class="n">gdf</span><span class="p">[</span><span class="n">label_names</span><span class="p">],</span>
+    <span class="p">)</span>
+    <span class="k">del</span> <span class="n">gdf</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">gdf_cats</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">_to_tensor</span><span class="p">(</span><span class="n">gdf_cats</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">,</span> <span class="n">cats</span><span class="p">,</span> <span class="n">to_cpu</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">gdf_conts</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">_to_tensor</span><span class="p">(</span><span class="n">gdf_conts</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">conts</span><span class="p">,</span> <span class="n">to_cpu</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">gdf_label</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">_to_tensor</span><span class="p">(</span><span class="n">gdf_label</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="n">to_cpu</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
 
 <span class="k">def</span> <span class="nf">get_final_cols</span><span class="p">(</span><span class="n">preproc</span><span class="p">):</span>
@@ -313,27 +341,21 @@
     <span class="k">if</span> <span class="n">apply_ops</span> <span class="ow">and</span> <span class="n">preproc</span><span class="p">:</span>
         <span class="n">gdf</span> <span class="o">=</span> <span class="n">preproc</span><span class="o">.</span><span class="n">apply_ops</span><span class="p">(</span><span class="n">gdf</span><span class="p">)</span>
 
-    <span class="n">to_cpu</span> <span class="o">=</span> <span class="kc">False</span>
-
     <span class="k">if</span> <span class="n">preproc</span><span class="p">:</span>
         <span class="n">cat_names</span><span class="p">,</span> <span class="n">cont_names</span><span class="p">,</span> <span class="n">label_names</span> <span class="o">=</span> <span class="n">get_final_cols</span><span class="p">(</span><span class="n">preproc</span><span class="p">)</span>
-        <span class="n">to_cpu</span> <span class="o">=</span> <span class="n">preproc</span><span class="o">.</span><span class="n">to_cpu</span>
 
-    <span class="n">gdf_cats</span><span class="p">,</span> <span class="n">gdf_conts</span><span class="p">,</span> <span class="n">gdf_label</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">gdf</span><span class="p">[</span><span class="n">cat_names</span><span class="p">],</span>
-        <span class="n">gdf</span><span class="p">[</span><span class="n">cont_names</span><span class="p">],</span>
-        <span class="n">gdf</span><span class="p">[</span><span class="n">label_names</span><span class="p">],</span>
+    <span class="n">_one_df</span><span class="p">(</span>
+        <span class="n">gdf</span><span class="p">,</span>
+        <span class="n">cats</span><span class="p">,</span>
+        <span class="n">conts</span><span class="p">,</span>
+        <span class="n">label</span><span class="p">,</span>
+        <span class="n">cat_names</span><span class="o">=</span><span class="n">cat_names</span><span class="p">,</span>
+        <span class="n">cont_names</span><span class="o">=</span><span class="n">cont_names</span><span class="p">,</span>
+        <span class="n">label_names</span><span class="o">=</span><span class="n">label_names</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="k">del</span> <span class="n">gdf</span>
-    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">gdf_cats</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="n">_to_tensor</span><span class="p">(</span><span class="n">gdf_cats</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">,</span> <span class="n">cats</span><span class="p">,</span> <span class="n">to_cpu</span><span class="o">=</span><span class="n">to_cpu</span><span class="p">)</span>
-    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">gdf_conts</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="n">_to_tensor</span><span class="p">(</span><span class="n">gdf_conts</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">conts</span><span class="p">,</span> <span class="n">to_cpu</span><span class="o">=</span><span class="n">to_cpu</span><span class="p">)</span>
-    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">gdf_label</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="n">_to_tensor</span><span class="p">(</span><span class="n">gdf_label</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="n">to_cpu</span><span class="o">=</span><span class="n">to_cpu</span><span class="p">)</span>
 
 
-<div class="viewcode-block" id="TorchTensorBatchFileItr"><a class="viewcode-back" href="../../api/torch_dataloader.html#nvtabular.torch_dataloader.TorchTensorBatchFileItr">[docs]</a><span class="k">class</span> <span class="nc">TorchTensorBatchFileItr</span><span class="p">:</span>
+<div class="viewcode-block" id="TorchTensorBatchFileItr"><a class="viewcode-back" href="../../api/torch_dataloader.html#nvtabular.torch_dataloader.TorchTensorBatchFileItr">[docs]</a><span class="k">class</span> <span class="nc">TorchTensorBatchFileItr</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">IterableDataset</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        For Torch Only:</span>
 <span class="sd">        Batch Tensor dataset, takes in a file and converts to tensors</span>
@@ -361,29 +383,13 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span> <span class="o">=</span> <span class="n">sub_batch_size</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">num_chunks</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">itr</span><span class="o">.</span><span class="n">engine</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">proc_new_chunk</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gdf</span><span class="p">):</span>
-        <span class="n">cats</span><span class="p">,</span> <span class="n">conts</span><span class="p">,</span> <span class="n">label</span> <span class="o">=</span> <span class="p">{},</span> <span class="p">{},</span> <span class="p">{}</span>
-        <span class="n">gdf_cats</span><span class="p">,</span> <span class="n">gdf_conts</span><span class="p">,</span> <span class="n">gdf_label</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">gdf</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">cat_cols</span><span class="p">],</span>
-            <span class="n">gdf</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">cont_cols</span><span class="p">],</span>
-            <span class="n">gdf</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">label_cols</span><span class="p">],</span>
-        <span class="p">)</span>
-        <span class="c1"># Change cats, conts to dim=1 for column dim=0 for df sub section</span>
-        <span class="n">cats</span> <span class="o">=</span> <span class="n">from_dlpack</span><span class="p">(</span><span class="n">gdf_cats</span><span class="o">.</span><span class="n">to_dlpack</span><span class="p">())</span><span class="o">.</span><span class="n">type</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">)</span>
-        <span class="n">conts</span> <span class="o">=</span> <span class="n">from_dlpack</span><span class="p">(</span><span class="n">gdf_conts</span><span class="o">.</span><span class="n">to_dlpack</span><span class="p">())</span><span class="o">.</span><span class="n">type</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-        <span class="n">label</span> <span class="o">=</span> <span class="n">from_dlpack</span><span class="p">(</span><span class="n">gdf_label</span><span class="o">.</span><span class="n">to_dlpack</span><span class="p">())</span><span class="o">.</span><span class="n">type</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">cats</span><span class="p">,</span> <span class="n">conts</span><span class="p">,</span> <span class="n">label</span>
+    <span class="k">def</span> <span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_chunks</span>
 
     <span class="k">def</span> <span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">for</span> <span class="n">chunk</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">itr</span><span class="p">:</span>
-            <span class="n">chunk</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">proc_new_chunk</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span>
-            <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">chunk</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">):</span>
-                <span class="n">batch</span> <span class="o">=</span> <span class="kc">None</span>
-                <span class="k">if</span> <span class="n">idx</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">chunk</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
-                    <span class="n">batch</span> <span class="o">=</span> <span class="p">[</span><span class="n">tensor</span><span class="p">[</span><span class="n">idx</span> <span class="p">:</span> <span class="n">idx</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">]</span> <span class="k">for</span> <span class="n">tensor</span> <span class="ow">in</span> <span class="n">chunk</span><span class="p">]</span>
-                <span class="k">else</span><span class="p">:</span>
-                    <span class="n">batch</span> <span class="o">=</span> <span class="p">[</span><span class="n">tensor</span><span class="p">[</span><span class="n">idx</span><span class="p">:]</span> <span class="k">for</span> <span class="n">tensor</span> <span class="ow">in</span> <span class="n">chunk</span><span class="p">]</span>
-                <span class="k">yield</span> <span class="n">batch</span></div>
+            <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">chunk</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">):</span>
+                <span class="k">yield</span> <span class="n">chunk</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">idx</span> <span class="p">:</span> <span class="n">idx</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">]</span></div>
 
 
 <span class="k">class</span> <span class="nc">DLCollator</span><span class="p">:</span>
@@ -401,7 +407,7 @@
         <span class="k">return</span> <span class="p">(</span><span class="n">batch</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">batch</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="n">batch</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">long</span><span class="p">()</span>
 
 
-<div class="viewcode-block" id="TorchTensorBatchDatasetItr"><a class="viewcode-back" href="../../api/torch_dataloader.html#nvtabular.torch_dataloader.TorchTensorBatchDatasetItr">[docs]</a><span class="k">class</span> <span class="nc">TorchTensorBatchDatasetItr</span><span class="p">:</span>
+<div class="viewcode-block" id="TorchTensorBatchDatasetItr"><a class="viewcode-back" href="../../api/torch_dataloader.html#nvtabular.torch_dataloader.TorchTensorBatchDatasetItr">[docs]</a><span class="k">class</span> <span class="nc">TorchTensorBatchDatasetItr</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">ChainDataset</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        For Torch Only:</span>
 <span class="sd">        Batch Tensor dataset, takes in list of files</span>
@@ -423,11 +429,18 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">paths</span> <span class="o">=</span> <span class="n">paths</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">cur_path</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span> <span class="o">=</span> <span class="n">kwargs</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rows</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">file_path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">paths</span><span class="p">:</span>
+            <span class="p">(</span><span class="n">num_rows</span><span class="p">,</span> <span class="n">num_row_groups</span><span class="p">,</span> <span class="n">columns</span><span class="p">,)</span> <span class="o">=</span> <span class="n">cudf</span><span class="o">.</span><span class="n">io</span><span class="o">.</span><span class="n">read_parquet_metadata</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">rows</span> <span class="o">+=</span> <span class="p">(</span><span class="n">num_rows</span> <span class="o">//</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;sub_batch_size&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span> <span class="o">+</span> <span class="mi">1</span>
 
     <span class="k">def</span> <span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">paths</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">cur_path</span> <span class="o">=</span> <span class="n">path</span>
-            <span class="k">yield from</span> <span class="n">TorchTensorBatchFileItr</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="p">)</span></div>
+            <span class="k">yield from</span> <span class="n">TorchTensorBatchFileItr</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">rows</span></div>
 
 
 <div class="viewcode-block" id="DLDataLoader"><a class="viewcode-back" href="../../api/torch_dataloader.html#nvtabular.torch_dataloader.DLDataLoader">[docs]</a><span class="k">class</span> <span class="nc">DLDataLoader</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">DataLoader</span><span class="p">):</span>
